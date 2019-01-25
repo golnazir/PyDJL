@@ -504,7 +504,6 @@ class DJL(object):
         
         flag = True; iteration = 0;
         while flag: 
-#            print ("iteration num = %i" %iteration)
             # Iteration shift
             iteration = iteration + 1
             eta0 = self.eta
@@ -598,4 +597,60 @@ class DJL(object):
         #
 
         print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, wave_ampl))
+    
+    #########################################
+    #######        diagnostics:     #########
+    #########################################
+    def diagnostics(self):
+        """
+        Computes a variety of diagnostics from the solved eta and c
+        """ 
+        #djles_common
+        #%%% Target grid selection %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        #targetgrid='interior';
+        #% targetgrid='endpoint';
+        #
+        #if isequal(targetgrid, 'endpoint')
+        #    % DJLES computes eta on the interior grid; if we want diagnostics on
+        #    % the endpoint grid then we need to do a shift.
+        #    eta=djles_shift_grid(eta,NX,NZ,'odd','odd');
+        #    Z=ZE; z=ze; x=xe;
+        #else
+        #    Z=ZC; z=zc; x=xc;
+        #end
+        
+        # Compute the diagnostics 
+        
+        # Compute velocities (Via SL2002 Eq 27)
+        etax , etaz = self.gradient(self.eta, 'odd', 'odd')
+        u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz     # WHICH Z????????
+        w = -self.Ubg(self.ZC - self.eta) *( -etax) - self.c*etax
+        uwave = u - self.Ubg (self.ZC)
+        
+        # Wave kinteic energy density (m^2/s^2)
+        kewave = 0.5*(uwave**2 + w**2)
+        
+        # APE density (m^2/s^2)
+        apedens = self.compute_apedens(self.eta, self.ZC)
+        
+        # Get gradient of u and w   -- TO DO: even case
+        ux, uz = self.gradient(u, 'even', 'even')
+        wx, wz = self.gradient(w, 'even', 'odd' )
+        
+        # Surface strain rate       -- TO DO: shift_grid
+        uxze = self.shift_grid(ux,NX,NZ,[],'even')   # shift ux to z endpoints
+        surf_strain = -uxze[-1,:]                    # = -du/dx(z=0)
+        
+        # Vorticity, density and Richardson number
+        vorticity = uz - wx
+        density = self.rho(self.ZC-self.eta)
+        ri = self.N2(self.ZC-self.eta)/(uz*uz)
+        
+        #Wavelength (currently works only on interior grid) -- TO DO: wavelength
+        wavelength = self.wavelength()
+        
+        # Residual in DJL equation
+        residual, LHS, RHS = self.residual( self.ZC)
+        print('Relative residual %e\n'% numpy.max(numpy.abs(residual)) / numpy.max(numpy.abs(LHS)))
+
     

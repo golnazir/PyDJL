@@ -44,6 +44,6 @@ end_time = time.time()
 
 print("Total wall clock time: %f seconds" % (end_time - start_time))
 
-##% Compute and plot the diagnostics
-##djles_diagnostics
+# Compute and plot the diagnostics
+djl.diagnostics()
 ##djles_plot
