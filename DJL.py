@@ -415,38 +415,7 @@ class DJL(object):
 #        fe = extendz(fe, symmz, gridtype)
 #        return fe
         
-    #TO DO:
-    #########################################
-    #######     shift_grid:         #########
-    #########################################
-    def shift_grid(self):
-        print('shift_grid')
-        #        function fe = djles_shift_grid(fc, NX, NZ, symmx, symmz)
-        #% Shifts the data fc from the interior grid to the endpoint grid
-        #% Specify symmetry as [] to skip shifting a dimension
-        #
-        #[SZ,SX] = size(fc); % Size of incoming grid
-        #
-        #if ~isequal(SX, NX+1) && ~isempty(symmx)
-        #    % Shift grid in X using FFT interpolation
-        #    eta0in = djles_extend(fc, symmx, [], 'interior');
-        #    eta0out = real(interpft(eta0in, 4*NX, 2));
-        #    eta0out = circshift(eta0out, [0 1]);
-        #    fc = eta0out(:, 1:2:2*NX+1);
-        #end
-        #
-        #if ~isequal(SZ, NZ+1) && ~isempty(symmz)
-        #    % Shift grid in Z using FFT interpolation
-        #    eta0in = djles_extend(fc, [], symmz, 'interior');
-        #    eta0out = real(interpft(eta0in, 4*NZ, 1));
-        #    eta0out = circshift(eta0out, [1 0]);
-        #    fc = eta0out(1:2:2*NZ+1, :);
-        #end
-        #
-        #fe=fc;
-        #end
-
-    
+   
     #########################################
     #######       gradient:         #########
     #########################################
@@ -459,26 +428,44 @@ class DJL(object):
             # x derivative
             ftrx = scipy.fftpack.dst (f , type = 2, axis = 1)    # Compute DST-II
             Fpx = numpy.einsum('ij,j-> ij', ftrx, self.kso)
-            # Now we have DCT-II coefficients. However we're missing the first one (k=0), so
-            # we need to prepend a zero to the start. To do so, we roll right by 1 and reset first value to zero
+            # Now we have DCT-II coefficients. However we're missing the first
+            # one (k=0), so we need to prepend a zero to the start. 
+            #To do so, we roll right by 1 and reset first value to zero
             Fpx    = numpy.roll(Fpx,1, axis = 1)
-            Fpx[0] = 0
+            Fpx[:, 0] = 0
             
             # Inverse transform via IDCT
-            fx = scipy.fftpack.idct(Fpx, type = 2)/(2*self.NX)
-        else: #(symmx == 'even'): 
-            print("######### TO DO (even -evem case) ###########" )
-        
+            fx = scipy.fftpack.idct(Fpx, type = 2, axis = 1)/(2*self.NX)
+        else:
+            ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)     # Compute DCT-II
+            # DCT-II wavenumbers go from 0 to NX-1 --SHOULD ke BE PART OF SELF?
+            ke = (numpy.pi/self.L) *numpy.arange(0,self.NX)            
+            #Fpx = -ftrx*ke
+            Fpx = numpy.einsum('ij,j-> ij', ftrx, -ke)
+
+            # Now we have DCT-II coefficients, we need to drop the first one
+            Fpx = numpy.roll(Fpx,-1, axis = 1)
+            fx = scipy.fftpack.idst(Fpx, type = 2, axis = 1)/(2*self.NX)  # Inverse transform via IDST
+#            gx_max_err = np.max(np.abs(gx-gx1))
+#        breakpoint()
         if (symmz == 'odd'):
             # z derivative
             ftrz = scipy.fftpack.dst (f , type = 2, axis = 0)    # Compute DST-II
             Fpz     = numpy.einsum('ij, i -> ij' , ftrz , self.mso)
             Fpz     = numpy.roll(Fpz, 1, axis = 0)
-            Fpz[0]  = 0
-            fz = scipy.fftpack.idct(Fpz, type = 2)/(2*self.NZ)  # Inverse transform via IDCT
+            Fpz[0, :]  = 0
+            fz = scipy.fftpack.idct(Fpz, type = 2 , axis = 0)/(2*self.NZ)   # Inverse transform via IDCT
+            
         else : 
-            print (" ######## TO DO ##########")
-         
+            ftrz = scipy.fftpack.dct(f, type = 2, axis = 0)      # Compute DCT-II
+            me  = (numpy.pi/self.H) * numpy.arange(0,self.NZ)
+          #  metmp = numpy.asmatrix(me)
+           # Fpz = metmp * -ftrz  
+            Fpz     = numpy.einsum('ij, i -> ij' , ftrz , -me)
+
+            Fpz = numpy.roll(Fpz,-1, axis = 0 )
+            fz  = scipy.fftpack.idst(Fpz, type= 2, axis = 0)/(2*self.NZ)   # Inverse transform via IDST
+#            breakpoint()
         return fx, fz
 
         
@@ -598,6 +585,35 @@ class DJL(object):
 
         print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, wave_ampl))
     
+     #TO DO:
+    #########################################
+    #######     shift_grid:         #########
+    #########################################
+    def shift_grid(self, fc, symmx, symmz):
+        print('shift_grid')
+        """
+        Shifts the data fc from the interior grid to the endpoint grid
+        Specify symmetry as [] to skip shifting a dimension
+        """
+        breakpoint()
+        SZ, SX = fc.shape   # Size of incoming grid
+        if (not SX == self.NX+1) and (not symmx):
+            # Shift grid in X using FFT interpolation
+#            eta0in = self.extend(fc, symmx, [], 'interior')
+#            eta0out = real(interpft(eta0in, 4*self.NX, 2))
+#            eta0out = circshift(eta0out, [0 1])
+#            fc = eta0out(:, 1:2:2*self.NX+1)
+        
+        if (not SZ, self.NZ+1) and (not symmz):
+            # Shift grid in Z using FFT interpolation
+#            eta0in = djles_extend(fc, [], symmz, 'interior');
+#            eta0out = real(interpft(eta0in, 4*NZ, 1));
+#            eta0out = circshift(eta0out, [1 0]);
+#            fc = eta0out(1:2:2*NZ+1, :);
+        fe = fc
+        return fe
+
+    
     #########################################
     #######        diagnostics:     #########
     #########################################
@@ -619,11 +635,15 @@ class DJL(object):
         #    Z=ZC; z=zc; x=xc;
         #end
         
+        
+        # assumption:
+        # targetgrid = 'interior'
+        # Z = ZC, z = zc, x = xc
         # Compute the diagnostics 
         
         # Compute velocities (Via SL2002 Eq 27)
         etax , etaz = self.gradient(self.eta, 'odd', 'odd')
-        u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz     # WHICH Z????????
+        u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz     # Do we want ZC ????????
         w = -self.Ubg(self.ZC - self.eta) *( -etax) - self.c*etax
         uwave = u - self.Ubg (self.ZC)
         
@@ -632,15 +652,15 @@ class DJL(object):
         
         # APE density (m^2/s^2)
         apedens = self.compute_apedens(self.eta, self.ZC)
-        
-        # Get gradient of u and w   -- TO DO: even case
+       
+        # Get gradient of u and w 
         ux, uz = self.gradient(u, 'even', 'even')
         wx, wz = self.gradient(w, 'even', 'odd' )
-        
+        breakpoint()
         # Surface strain rate       -- TO DO: shift_grid
-        uxze = self.shift_grid(ux,NX,NZ,[],'even')   # shift ux to z endpoints
+        uxze = self.shift_grid(ux,[],'even')   # shift ux to z endpoints
         surf_strain = -uxze[-1,:]                    # = -du/dx(z=0)
-        
+        breakpoint()
         # Vorticity, density and Richardson number
         vorticity = uz - wx
         density = self.rho(self.ZC-self.eta)
