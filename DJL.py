@@ -318,12 +318,10 @@ class DJL(object):
         Changes the resolution of eta to NZxNX
         Then update grid info
         """
-#        embed()
         # Change eta in NX dim
         if not NX0 == self.NX:
             ETA = scipy.fftpack.dst(self.eta, type=2, axis = 1)/(2*self.NX)
             # Increase resolution: pad with zeros
-#            embed()
             if NX0 > self.NX :
                 ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ, NX0-self.NX])], axis= 1)
             # Decrease resolution: drop highest coefficients
@@ -347,74 +345,6 @@ class DJL(object):
             self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 0)
         
         self.prepareGrid(self.NX, NZ0)    
-            
-
-    #########################################
-    #######         extend:         #########
-    #########################################
-#    def extend(self, f, symmx, symmz, gridtype):
-#        """
-#        Extends the function f using symmetry symmx, symmz in x and z
-#        Specify symmetry as [] to skip extending a dimension
-#        """
-#        def getsymm(symm):
-#            """Converts the symmetry to a sign"""
-#            if symm == 'odd':
-#                s = -1 
-#            elif symm == 'even':
-#                s = 1
-#            else :
-#                s = 0
-#            return s
-#        
-#        def extendx(f, symm, gridtype):
-#            """
-#            Extend the function in the x dimension using symmetry symm
-#            """
-#            if not symm:
-#                print("extendx - symm is empty")
-#                s = self.getsymm(symm)
-#                
-#                if gridtype == 'interior':
-#                    #flip: 0 - column ; 1 - rows
-#                    #concatenate: 0 - col;  1 - row
-#                    fflip = numpy.flip(f, axis=1)
-##                    fe = numpy.concatenate((f, s*fflip), axis = 1)
-#                    
-#                else:# gridtype == 'endpoint':
-#                    fflip = numpy.flip(f[:, 1:-2], axis=1)
-##                    fe = numpy.concatenate((f,s*fflip), axis = 1)
-#                    
-#                fe = numpy.concatenate((f, s*fflip), axis=1)
-#            else:
-#                fe = f
-#                
-#            return fe
-#        
-#        def extendz(f, symm, gridtype):
-#            """
-#            Extend the function in the z dimension using symmetry symm            
-#            """
-#            if not symm:
-#                s = self.getsymm(symm)
-#                #flip: 0 - column ; 1 - rows
-#                #concatenate: 0 - col;  1 - row
-#                if gridtype =='interior':
-#                    fflip = numpy.flip(f, axis=0)
-##                    fe = cat(1, f, s*compat_flip(f,1))
-#                    
-#                else: # gridtype == 'endpoint':
-#                    fflip = numpy.flip(f[1:-2, :], axis=0)
-##                    fe = cat(1, f, s*compat_flip(f(2:end-1,:),1))
-#                    
-#                fe = numpy.concatenate((f, s*fflip), axis=0)
-#            else:
-#                fe = f
-#            return fe
-#        fe = extendx(f , symmx, gridtype)
-#        fe = extendz(fe, symmz, gridtype)
-#        return fe
-        
    
     #########################################
     #######       gradient:         #########
@@ -423,49 +353,40 @@ class DJL(object):
         """
         Computes gradient using the specified symmetry and grid type
         """    
-        if (symmx == 'odd'):
-            
+        if (symmx == 'odd'):            
             # x derivative
-            ftrx = scipy.fftpack.dst (f , type = 2, axis = 1)    # Compute DST-II
+            ftrx = scipy.fftpack.dst (f , type = 2, axis = 1)
             Fpx = numpy.einsum('ij,j-> ij', ftrx, self.kso)
             # Now we have DCT-II coefficients. However we're missing the first
             # one (k=0), so we need to prepend a zero to the start. 
             #To do so, we roll right by 1 and reset first value to zero
             Fpx    = numpy.roll(Fpx,1, axis = 1)
-            Fpx[:, 0] = 0
-            
-            # Inverse transform via IDCT
+            Fpx[:, 0] = 0            
             fx = scipy.fftpack.idct(Fpx, type = 2, axis = 1)/(2*self.NX)
         else:
-            ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)     # Compute DCT-II
-            # DCT-II wavenumbers go from 0 to NX-1 --SHOULD ke BE PART OF SELF?
+            ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)
             ke = (numpy.pi/self.L) *numpy.arange(0,self.NX)            
-            #Fpx = -ftrx*ke
             Fpx = numpy.einsum('ij,j-> ij', ftrx, -ke)
 
             # Now we have DCT-II coefficients, we need to drop the first one
             Fpx = numpy.roll(Fpx,-1, axis = 1)
-            fx = scipy.fftpack.idst(Fpx, type = 2, axis = 1)/(2*self.NX)  # Inverse transform via IDST
-#            gx_max_err = np.max(np.abs(gx-gx1))
-#        breakpoint()
+            fx = scipy.fftpack.idst(Fpx, type = 2, axis = 1)/(2*self.NX)
+
         if (symmz == 'odd'):
             # z derivative
-            ftrz = scipy.fftpack.dst (f , type = 2, axis = 0)    # Compute DST-II
+            ftrz = scipy.fftpack.dst (f , type = 2, axis = 0)
             Fpz     = numpy.einsum('ij, i -> ij' , ftrz , self.mso)
             Fpz     = numpy.roll(Fpz, 1, axis = 0)
             Fpz[0, :]  = 0
-            fz = scipy.fftpack.idct(Fpz, type = 2 , axis = 0)/(2*self.NZ)   # Inverse transform via IDCT
+            fz = scipy.fftpack.idct(Fpz, type = 2 , axis = 0)/(2*self.NZ)
             
         else : 
-            ftrz = scipy.fftpack.dct(f, type = 2, axis = 0)      # Compute DCT-II
+            ftrz = scipy.fftpack.dct(f, type = 2, axis = 0)
             me  = (numpy.pi/self.H) * numpy.arange(0,self.NZ)
-          #  metmp = numpy.asmatrix(me)
-           # Fpz = metmp * -ftrz  
             Fpz     = numpy.einsum('ij, i -> ij' , ftrz , -me)
-
             Fpz = numpy.roll(Fpz,-1, axis = 0 )
-            fz  = scipy.fftpack.idst(Fpz, type= 2, axis = 0)/(2*self.NZ)   # Inverse transform via IDST
-#            breakpoint()
+            fz  = scipy.fftpack.idst(Fpz, type= 2, axis = 0)/(2*self.NZ)
+
         return fx, fz
 
         
@@ -589,27 +510,30 @@ class DJL(object):
     #########################################
     #######     shift_grid:         #########
     #########################################
-    def shift_grid(self, fc, symmx, symmz):
-        print('shift_grid')
+    def shift_grid(self, fc, symmx = None, symmz = None):
         """
         Shifts the data fc from the interior grid to the endpoint grid
         Specify symmetry as [] to skip shifting a dimension
         """
         breakpoint()
-        SZ, SX = fc.shape   # Size of incoming grid
-        if (not SX == self.NX+1) and (not symmx):
-            # Shift grid in X using FFT interpolation
-#            eta0in = self.extend(fc, symmx, [], 'interior')
-#            eta0out = real(interpft(eta0in, 4*self.NX, 2))
-#            eta0out = circshift(eta0out, [0 1])
-#            fc = eta0out(:, 1:2:2*self.NX+1)
+        if symmx == 'odd':
+            # TO DO
+            print ('symmx = odd')
+        else:
+            # TO DO
+            print('symmx = even')
         
-        if (not SZ, self.NZ+1) and (not symmz):
-            # Shift grid in Z using FFT interpolation
-#            eta0in = djles_extend(fc, [], symmz, 'interior');
-#            eta0out = real(interpft(eta0in, 4*NZ, 1));
-#            eta0out = circshift(eta0out, [1 0]);
-#            fc = eta0out(1:2:2*NZ+1, :);
+        if symmz == 'odd':
+            # TO DO
+            print ('symmz = odd')
+        else:
+            # Compute DCT-II, pad one zero at end, inverse DCT-I
+            FC = scipy.fftpack.dct(fc, type=2, axis = 0)/(2*self.NZ)
+            
+            FC = numpy.concatenate((FC, numpy.zeros([1,self.NX])), axis = 0)
+            fc = scipy.fftpack.idct(FC, type=1, axis = 0)
+
+        
         fe = fc
         return fe
 
@@ -621,26 +545,6 @@ class DJL(object):
         """
         Computes a variety of diagnostics from the solved eta and c
         """ 
-        #djles_common
-        #%%% Target grid selection %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        #targetgrid='interior';
-        #% targetgrid='endpoint';
-        #
-        #if isequal(targetgrid, 'endpoint')
-        #    % DJLES computes eta on the interior grid; if we want diagnostics on
-        #    % the endpoint grid then we need to do a shift.
-        #    eta=djles_shift_grid(eta,NX,NZ,'odd','odd');
-        #    Z=ZE; z=ze; x=xe;
-        #else
-        #    Z=ZC; z=zc; x=xc;
-        #end
-        
-        
-        # assumption:
-        # targetgrid = 'interior'
-        # Z = ZC, z = zc, x = xc
-        # Compute the diagnostics 
-        
         # Compute velocities (Via SL2002 Eq 27)
         etax , etaz = self.gradient(self.eta, 'odd', 'odd')
         u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz     # Do we want ZC ????????
@@ -657,8 +561,9 @@ class DJL(object):
         ux, uz = self.gradient(u, 'even', 'even')
         wx, wz = self.gradient(w, 'even', 'odd' )
         breakpoint()
-        # Surface strain rate       -- TO DO: shift_grid
-        uxze = self.shift_grid(ux,[],'even')   # shift ux to z endpoints
+        
+        # Surface strain rate
+        uxze = self.shift_grid(ux, symmz = 'even')   # shift ux to z endpoints
         surf_strain = -uxze[-1,:]                    # = -du/dx(z=0)
         breakpoint()
         # Vorticity, density and Richardson number
