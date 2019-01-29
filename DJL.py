@@ -352,7 +352,7 @@ class DJL(object):
     def gradient(self, f, symmx, symmz): 
         """
         Computes gradient using the specified symmetry and grid type
-        """    
+        """
         if (symmx == 'odd'):            
             # x derivative
             ftrx = scipy.fftpack.dst (f , type = 2, axis = 1)
@@ -515,22 +515,30 @@ class DJL(object):
         Shifts the data fc from the interior grid to the endpoint grid
         Specify symmetry as [] to skip shifting a dimension
         """
-        breakpoint()
         if symmx == 'odd':
-            # TO DO
-            print ('symmx = odd')
-        else:
-            # TO DO
-            print('symmx = even')
+            # Compute DST-II, trim one coefficient, inverse DST-I, pad zeros at each end
+            FC = scipy.fftpack.dst (fc, type = 2 , axis = 1)/(2*self.NX)
+            FC = FC[:, :-1]
+            fc = scipy.fftpack.idst(FC, type = 1, axis = 1)
+            fc = numpy.concatenate((numpy.zeros([fc.shape[0], 1]), fc, 
+                                    numpy.zeros([fc.shape[0], 1])), axis= 1)
+        if symmx == 'even':
+
+            FC = scipy.fftpack.dct(fc, type=2, axis = 1)/(2*self.NX)
+            FC = numpy.concatenate((FC, numpy.zeros([FC.shape[0], 1])), axis = 1)
+            fc = scipy.fftpack.idct(FC, type=1, axis = 1)       
         
         if symmz == 'odd':
-            # TO DO
-            print ('symmz = odd')
-        else:
+            FC = scipy.fftpack.dst(fc, type = 2, axis = 0)/(2*self.NZ)
+            FC = FC[:-1, :]
+            fc = scipy.fftpack.idst(FC, type = 1, axis = 0)
+            fc = numpy.concatenate((numpy.zeros([1, fc.shape[1]]), fc,
+                                    numpy.zeros([1, fc.shape[1]])), axis=0)
+
+        if symmz == 'even':
             # Compute DCT-II, pad one zero at end, inverse DCT-I
-            FC = scipy.fftpack.dct(fc, type=2, axis = 0)/(2*self.NZ)
-            
-            FC = numpy.concatenate((FC, numpy.zeros([1,self.NX])), axis = 0)
+            FC = scipy.fftpack.dct(fc, type=2, axis = 0)/(2*self.NZ)            
+            FC = numpy.concatenate((FC, numpy.zeros([1,FC.shape[1]])), axis = 0)
             fc = scipy.fftpack.idct(FC, type=1, axis = 0)
 
         
@@ -547,7 +555,7 @@ class DJL(object):
         """ 
         # Compute velocities (Via SL2002 Eq 27)
         etax , etaz = self.gradient(self.eta, 'odd', 'odd')
-        u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz     # Do we want ZC ????????
+        u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz
         w = -self.Ubg(self.ZC - self.eta) *( -etax) - self.c*etax
         uwave = u - self.Ubg (self.ZC)
         
@@ -560,17 +568,17 @@ class DJL(object):
         # Get gradient of u and w 
         ux, uz = self.gradient(u, 'even', 'even')
         wx, wz = self.gradient(w, 'even', 'odd' )
-        breakpoint()
         
         # Surface strain rate
         uxze = self.shift_grid(ux, symmz = 'even')   # shift ux to z endpoints
         surf_strain = -uxze[-1,:]                    # = -du/dx(z=0)
-        breakpoint()
+        
         # Vorticity, density and Richardson number
         vorticity = uz - wx
         density = self.rho(self.ZC-self.eta)
         ri = self.N2(self.ZC-self.eta)/(uz*uz)
         
+        breakpoint()
         #Wavelength (currently works only on interior grid) -- TO DO: wavelength
         wavelength = self.wavelength()
         
