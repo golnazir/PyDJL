@@ -115,7 +115,9 @@ class DJL(object):
         # DST-II wavenumbers go from 1 to NX-1 or NZ-1 (beacause the function is odd)
         self.kso = (numpy.pi / self.L) * numpy.arange(1, self.NX+1)
         self.mso = (numpy.pi / self.H) * numpy.arange(1, self.NZ+1)
-       
+        
+        self.kse = (numpy.pi / self.L) * numpy.arange(0, self.NX)
+        self.mse = (numpy.pi / self.H) * numpy.arange(0, self.NZ)
 #        self.msi = -1/self.ms
 #        self.msi [self.ms==0] = 0
         ksm = numpy.tile(self.kso,(self.NZ ,1))
@@ -131,15 +133,15 @@ class DJL(object):
         """
         Gets the weights for 2D quadrature over the domain
         """
-        wtx = self._quadweights(self.NX)*(self.L/numpy.pi)
-        wtz = self._quadweights(self.NZ)*(self.H/numpy.pi)
+        wtx = self.quadweights(self.NX)*(self.L/numpy.pi)
+        wtz = self.quadweights(self.NZ)*(self.H/numpy.pi)
         w = numpy.einsum('i,j->ij',  wtz, wtx)
         return w
     
     #########################################
-    #######     djles_quadweights:   ########
+    #######          quadweights:    ########
     #########################################
-    def _quadweights(self, N):
+    def quadweights(self, N):
         """
         Quadrature weights for integrating an odd periodic function over a
         half period using the interior grid. From John Boyd's Chebyshev and
@@ -360,30 +362,30 @@ class DJL(object):
             # Now we have DCT-II coefficients. However we're missing the first
             # one (k=0), so we need to prepend a zero to the start. 
             #To do so, we roll right by 1 and reset first value to zero
-            Fpx    = numpy.roll(Fpx,1, axis = 1)
+            Fpx = numpy.roll(Fpx,1, axis = 1)
             Fpx[:, 0] = 0            
             fx = scipy.fftpack.idct(Fpx, type = 2, axis = 1)/(2*self.NX)
         else:
             ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)
-            ke = (numpy.pi/self.L) *numpy.arange(0,self.NX)            
-            Fpx = numpy.einsum('ij,j-> ij', ftrx, -ke)
+#            ke = (numpy.pi/self.L) *numpy.arange(0,self.NX)            
+            Fpx = numpy.einsum('ij,j-> ij', ftrx, -self.kse)
 
             # Now we have DCT-II coefficients, we need to drop the first one
             Fpx = numpy.roll(Fpx,-1, axis = 1)
-            fx = scipy.fftpack.idst(Fpx, type = 2, axis = 1)/(2*self.NX)
+            fx  = scipy.fftpack.idst(Fpx, type = 2, axis = 1)/(2*self.NX)
 
         if (symmz == 'odd'):
             # z derivative
             ftrz = scipy.fftpack.dst (f , type = 2, axis = 0)
-            Fpz     = numpy.einsum('ij, i -> ij' , ftrz , self.mso)
-            Fpz     = numpy.roll(Fpz, 1, axis = 0)
+            Fpz  = numpy.einsum('ij, i -> ij' , ftrz , self.mso)
+            Fpz  = numpy.roll(Fpz, 1, axis = 0)
             Fpz[0, :]  = 0
             fz = scipy.fftpack.idct(Fpz, type = 2 , axis = 0)/(2*self.NZ)
             
         else : 
             ftrz = scipy.fftpack.dct(f, type = 2, axis = 0)
-            me  = (numpy.pi/self.H) * numpy.arange(0,self.NZ)
-            Fpz     = numpy.einsum('ij, i -> ij' , ftrz , -me)
+#            me  = (numpy.pi/self.H) * numpy.arange(0,self.NZ)
+            Fpz = numpy.einsum('ij, i -> ij' , ftrz , -self.mse)
             Fpz = numpy.roll(Fpz,-1, axis = 0 )
             fz  = scipy.fftpack.idst(Fpz, type= 2, axis = 0)/(2*self.NZ)
 
@@ -506,7 +508,6 @@ class DJL(object):
 
         print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, wave_ampl))
     
-     #TO DO:
     #########################################
     #######     shift_grid:         #########
     #########################################
@@ -534,17 +535,59 @@ class DJL(object):
             fc = scipy.fftpack.idst(FC, type = 1, axis = 0)
             fc = numpy.concatenate((numpy.zeros([1, fc.shape[1]]), fc,
                                     numpy.zeros([1, fc.shape[1]])), axis=0)
-
         if symmz == 'even':
             # Compute DCT-II, pad one zero at end, inverse DCT-I
             FC = scipy.fftpack.dct(fc, type=2, axis = 0)/(2*self.NZ)            
             FC = numpy.concatenate((FC, numpy.zeros([1,FC.shape[1]])), axis = 0)
             fc = scipy.fftpack.idct(FC, type=1, axis = 0)
-
-        
+    
         fe = fc
         return fe
+    
+    #########################################
+    #######        wavelength :     #########
+    #########################################
+    def wavelength(self):
+        """
+        L_w following via Eq 3.6 in
+        Aghsaee, P., Boegman, L., and K. G. Lamb. 2010. "Breaking of shoaling 
+        internal solitary waves". J. Fluid Mech. 659 289-317. doi:10.1017/S002211201000248X.
+        We return 2*L_w as the wavelength
+        """
+        iz, ix = numpy.unravel_index(numpy.argmax(numpy.abs(self.eta)), self.eta.shape)
+        etaL = self.eta[iz, :]
+        w  = self.quadweights(self.NX) *(self.L/numpy.pi)
+        Lw = numpy.sum(w*etaL) / self.eta[iz,ix]
+        # We take wavelength as twice Lw
+        wavelength = 2*Lw
+        return wavelength
 
+    #########################################
+    #######        residual :       #########
+    #########################################
+    def residual(self):
+        print ('TO DO: residual')
+#    function [residual, LHS, RHS] = djles_residual(ks, ms, eta, Ubg, Ubgz, N2, z, c, gridtype)
+#% DJL residual using Eq 2.32 in (Stastna, 2001)
+#
+#% Odd extend the function in both directions
+#etaextended = djles_extend(eta, 'odd', 'odd', gridtype);
+#
+#[SZ,SX] = size(eta);
+#
+#% Compute left hand side
+#LAP = -bsxfun(@plus,ms.^2,ks.^2);           % Laplacian operator
+#LHS = real(ifft2(LAP.*fft2(etaextended)));  % Laplacian of extended eta
+#LHS = LHS(1:SZ, 1:SX);                      % Trim for eta on gridtype
+#
+#% Compute right hand side
+#[etax, etaz] = djles_gradient(eta, ks, ms, 'odd', 'odd', gridtype);
+#Umc = Ubg(z-eta)-c;
+#RHS = -(Ubgz(z-eta)./Umc).*(1 - (etax.^2 + (1-etaz).^2)) - N2(z-eta).*eta./(Umc.^2);
+#
+#% Residual
+#residual = LHS-RHS;
+#end
     
     #########################################
     #######        diagnostics:     #########
@@ -576,14 +619,56 @@ class DJL(object):
         # Vorticity, density and Richardson number
         vorticity = uz - wx
         density = self.rho(self.ZC-self.eta)
-        ri = self.N2(self.ZC-self.eta)/(uz*uz)
+        ri = self.N2(self.ZC-self.eta)/(uz*uz)       
         
-        breakpoint()
-        #Wavelength (currently works only on interior grid) -- TO DO: wavelength
+        #Wavelength (currently works only on interior grid)
         wavelength = self.wavelength()
-        
+
         # Residual in DJL equation
         residual, LHS, RHS = self.residual( self.ZC)
         print('Relative residual %e\n'% numpy.max(numpy.abs(residual)) / numpy.max(numpy.abs(LHS)))
-
+        breakpoint()
     
+     #########################################
+     #######            plot :       #########
+     #########################################
+     def plot(self):
+         print('TO DO: plot')
+        #         if ishandle(1), set(0, 'CurrentFigure', 1); else figure(1); end
+        #clf
+        #set(gcf,'DefaultLineLineWidth',2,'DefaultTextFontSize',12,...
+        #    'DefaultTextFontWeight','bold','DefaultAxesFontSize',12,...
+        #    'DefaultAxesFontWeight','bold');
+        #
+        #plottype=1;
+        #
+        #if plottype==1
+        #    % Plot eta and density(z-eta)
+        #    subplot(1,2,1); imagesc(x,z,eta); title('eta (m)');
+        #    subplot(1,2,2); imagesc(x,z,density); title('density');
+        #    for ii=1:2
+        #        subplot(1,2,ii); set(gca,'ydir','normal');
+        #        axis([0 L -H 0]); colorbar; xlabel('x (m)'); ylabel('z (m)');
+        #    end
+        #elseif plottype==2
+        #    % Plot eight fields
+        #    subplot(4,2,1); imagesc(x,z,eta);       title('eta (m)');
+        #    subplot(4,2,2); imagesc(x,z,density);   title('density');
+        #    subplot(4,2,3); imagesc(x,z,uwave);     title('u (wave) (m/s)');
+        #    caxis([-1 1]*max(abs(uwave(:))));
+        #    subplot(4,2,4); imagesc(x,z,w);         title('w (m/s)');
+        #    caxis([-1 1]*max(abs(w(:))));
+        #    subplot(4,2,5); imagesc(x,z,kewave);    title('kewave (m^2/s^2)');
+        #    caxis([0 1]*max(abs(kewave(:))));
+        #    subplot(4,2,6); imagesc(x,z,apedens);   title('ape density');
+        #    caxis([0 1]*max(abs(apedens(:))));
+        #    subplot(4,2,7); imagesc(x,z,ri);        title('Ri');
+        #    caxis([0.2 1]);
+        #    subplot(4,2,8); imagesc(x,z,vorticity); title('vorticity (1/s)');
+        #    caxis([-1 1]*max(abs(vorticity(:))));
+        #    for ii=1:8
+        #        subplot(4,2,ii); set(gca,'ydir','normal');
+        #        axis([0 L -H 0]); colorbar; xlabel('x (m)'); ylabel('z (m)');
+        #    end
+        #end
+        #drawnow
