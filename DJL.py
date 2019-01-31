@@ -20,7 +20,7 @@ class DJL(object):
     #######  djles_common: #########
     ################################
         
-    def __init__(self, A, L, H, NX, NZ, rho, rhoz, Ubg=None, Ubgz = None, Ubgzz=None):
+    def __init__(self, A, L, H, NX, NZ, rho, rhoz, intrho=None, Ubg=None, Ubgz = None, Ubgzz=None):
         """
         Constructor
         """
@@ -30,7 +30,12 @@ class DJL(object):
        
         self.rho  = rho 
         self.rhoz = rhoz
-
+        
+        if intrho is None:
+            self.intrho = zer
+        else:
+            self.intrho = intrho
+            
         if Ubg is None:
             zer = numpy.zeros(z.shape)
             self.Ubg   = zer
@@ -122,8 +127,8 @@ class DJL(object):
 #        self.msi [self.ms==0] = 0
         ksm = numpy.tile(self.kso,(self.NZ ,1))
         msm = numpy.tile(self.mso,(self.NX, 1)).transpose()
-        LAP = -ksm**2 - msm**2
-        self.INVLAP = 1/LAP
+        self.LAP = -ksm**2 - msm**2
+        self.INVLAP = 1/self.LAP
 
         
     #########################################
@@ -194,7 +199,7 @@ class DJL(object):
         V2 = V[:self.NZ-2, ii]
         
         #largest eigenvalue is clw
-        clw = cc[ii]
+        clw = cc[ii].real
         
         #Add boundary conditions
         phi = numpy.pad(V2, (1,1), 'constant')
@@ -258,11 +263,24 @@ class DJL(object):
         """
         Use Gauss quadrature to find ape density
         """
-        apedens = self.rho(z - eta)
-        for ii in range (0, numpy.size(self.wl)):
-            apedens = apedens  - self.wl[ii] *self.rho(z-self.zl[ii]*eta)
+        if self.intrho is None:
+            A1 = self.rho(z - eta)
+            A2 = 0.0
+            for ii in range (0, numpy.size(self.wl)):
+                A2 -= self.wl[ii] *self.rho(z-self.zl[ii]*eta)
+            apedens = (A1+A2)*eta
+        else:
+            B1 = self.rho(z-eta)*eta
+            B2 = self.intrho(z-eta) - self.intrho(z)
+            apedens = B1 + B2
 
-        return (self.g * apedens * eta)   
+        return (self.g * apedens)
+    
+#        apedens = self.rho(z - eta)
+#        for ii in range (0, numpy.size(self.wl)):
+#            apedens = apedens  - self.wl[ii] *self.rho(z-self.zl[ii]*eta)
+
+#        return (self.g * apedens * eta)   
     
     #########################################
     #######        diffmatrix:      #########
@@ -493,7 +511,7 @@ class DJL(object):
                 flag = False
             if (iteration >= self.max_iteration):
                 flag = False
-                print("Reached maximum number of iterations (%d >= %d)\n" %(iteration,max_iteration))
+                print("Reached maximum number of iterations (%d >= %d)\n" %(iteration,self.max_iteration))
            
         #
         #t.stop = clock; t.total = etime(t.stop, t.start);
@@ -565,30 +583,40 @@ class DJL(object):
     #########################################
     #######        residual :       #########
     #########################################
-    def residual(self):
+    def residual(self, z):
         print ('TO DO: residual')
-#    function [residual, LHS, RHS] = djles_residual(ks, ms, eta, Ubg, Ubgz, N2, z, c, gridtype)
-#% DJL residual using Eq 2.32 in (Stastna, 2001)
-#
-#% Odd extend the function in both directions
-#etaextended = djles_extend(eta, 'odd', 'odd', gridtype);
-#
-#[SZ,SX] = size(eta);
-#
-#% Compute left hand side
-#LAP = -bsxfun(@plus,ms.^2,ks.^2);           % Laplacian operator
-#LHS = real(ifft2(LAP.*fft2(etaextended)));  % Laplacian of extended eta
-#LHS = LHS(1:SZ, 1:SX);                      % Trim for eta on gridtype
-#
-#% Compute right hand side
-#[etax, etaz] = djles_gradient(eta, ks, ms, 'odd', 'odd', gridtype);
-#Umc = Ubg(z-eta)-c;
-#RHS = -(Ubgz(z-eta)./Umc).*(1 - (etax.^2 + (1-etaz).^2)) - N2(z-eta).*eta./(Umc.^2);
-#
-#% Residual
-#residual = LHS-RHS;
-#end
-    
+        """
+        DJL residual using Eq 2.32 in (Stastna, 2001)
+        """
+        # Compute left hand side
+        ETA = scipy.fftpack.dstn(self.eta, type = 2)/(4*self.NX*self.NZ)
+        LHS = ETA * self.LAP
+        lhs = scipy.fftpack.idstn(LHS, type = 2)
+        
+        # Compute right hand side
+        etax, etaz = self.gradient(self.eta, 'odd', 'odd')
+        Umc = self.Ubg(z - self.eta)-self.c
+        aa = -(self.Ubgz(z-self.eta)/Umc)
+        bb = (1 - (etax**2 + (1-etaz)**2))
+#        cc = -self.N2(z-self.eta)
+#        dd = self.eta/(Umc**2)
+        cc = - self.N2(z-self.eta)*self.eta
+        dd = (Umc**2)
+        
+        ee = aa*bb
+#        ff = cc*dd
+        ff = cc/dd
+        
+        ll = ee + ff
+        
+        rhs = -(self.Ubgz(z-self.eta)/Umc)*(1 - (etax**2 + (1-etaz)**2))
+        - self.N2(z-self.eta)*self.eta/(Umc**2)
+        
+        # Residual
+        residual = lhs-rhs
+#        breakpoint()
+        return residual, lhs, rhs
+
     #########################################
     #######        diagnostics:     #########
     #########################################
@@ -626,14 +654,17 @@ class DJL(object):
 
         # Residual in DJL equation
         residual, LHS, RHS = self.residual( self.ZC)
-        print('Relative residual %e\n'% numpy.max(numpy.abs(residual)) / numpy.max(numpy.abs(LHS)))
-        breakpoint()
+#        breakpoint()
+        res = numpy.max(numpy.abs(residual))
+        lhs = numpy.max(numpy.abs(LHS))
+        print('Relative residual %e ' % (res/lhs) )
+#        breakpoint()
     
      #########################################
      #######            plot :       #########
      #########################################
-     def plot(self):
-         print('TO DO: plot')
+#     def plot(self):
+#         print('TO DO: plot')
         #         if ishandle(1), set(0, 'CurrentFigure', 1); else figure(1); end
         #clf
         #set(gcf,'DefaultLineLineWidth',2,'DefaultTextFontSize',12,...

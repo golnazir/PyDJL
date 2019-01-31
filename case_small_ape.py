@@ -16,12 +16,16 @@ NZ = 40     #grid
 a_d = 0.02
 z0_d= 0.05
 d_d = 0.01
-rho = lambda z: 1-a_d*numpy.tanh((z+z0_d)/d_d)
-rhoz= lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
+rho    = lambda z: 1-a_d*numpy.tanh((z+z0_d)/d_d)
+intrho = lambda z: z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
+rhoz   = lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
+
+def intrho(z):
+    return z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
 
 # The velocity profile (zero for this case) (m/s)
-Ubg= lambda z: 0*z 
-Ubgz= lambda z: 0*z
+Ubg  = lambda z: 0*z 
+Ubgz = lambda z: 0*z
 Ubgzz= lambda z: 0*z
 
 ################################
@@ -30,7 +34,7 @@ Ubgzz= lambda z: 0*z
 start_time = time.time()
 
 #  Create DJL object
-djl = DJL(A, L,H,NX,NZ,rho,rhoz,Ubg, Ubgz, Ubgzz)
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho, Ubg, Ubgz, Ubgzz)
 
 # Find the solution of the DJL equation
 djl.refine_solution()
@@ -46,4 +50,5 @@ print("Total wall clock time: %f seconds" % (end_time - start_time))
 
 # Compute and plot the diagnostics
 djl.diagnostics()
-djl.plot()
+
+#djl.plot()
