@@ -20,9 +20,6 @@ rho    = lambda z: 1-a_d*numpy.tanh((z+z0_d)/d_d)
 intrho = lambda z: z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
 rhoz   = lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
 
-def intrho(z):
-    return z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
-
 # The velocity profile (zero for this case) (m/s)
 Ubg  = lambda z: 0*z 
 Ubgz = lambda z: 0*z

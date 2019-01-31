@@ -31,13 +31,14 @@ class DJL(object):
         self.rho  = rho 
         self.rhoz = rhoz
         
+        def zer(z): return numpy.zeros(z.shape)
+        
         if intrho is None:
             self.intrho = zer
         else:
             self.intrho = intrho
             
         if Ubg is None:
-            zer = numpy.zeros(z.shape)
             self.Ubg   = zer
             self.Ubgz  = zer
             self.Ubgzz = zer
