@@ -8,8 +8,6 @@ import time
 import numpy
 from DJL import DJL
 
-from IPython import embed
-
 # Specify the parameters of the problem 
 Atarget = 2e-3      # APE for wave (m^4/s^2)
 A  = Atarget/100

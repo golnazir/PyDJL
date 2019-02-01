@@ -20,18 +20,22 @@ class DJL(object):
     #######  djles_common: #########
     ################################
         
-    def __init__(self, A, L, H, NX, NZ, rho, rhoz, intrho=None, Ubg=None, Ubgz = None, Ubgzz=None):
+    def __init__(self, A, L, H, NX, NZ, rho=None, rhoz = None, intrho=None, Ubg=None, Ubgz = None, Ubgzz=None):
         """
         Constructor
         """
         self.A = A 	#APE for wave (m^4/s^2)
         self.L = L 	#domain width (m)
         self.H = H 	#domain depth (m)
-       
-        self.rho  = rho 
-        self.rhoz = rhoz
-        
+              
         def zer(z): return numpy.zeros(z.shape)
+        
+        if rho is None:
+            self.rho = zer
+            self.rhoz = zer
+        else:
+            self.rho = rho
+            self.rhoz = rhoz
         
         if intrho is None:
             self.intrho = zer
@@ -177,6 +181,7 @@ class DJL(object):
         #get n2, u and uzz data
         tmpz   = self.zc[1:-1]      # column vector
         n2vec  = self.N2(tmpz) 
+        
         uvec   = self.Ubg(tmpz)
         uzzvec = self.Ubgzz(tmpz)
         
@@ -204,6 +209,7 @@ class DJL(object):
         
         #Add boundary conditions
         phi = numpy.pad(V2, (1,1), 'constant')
+#        breakpoint()
         uvec = numpy.pad(uvec, (1,1), 'constant', constant_values = (self.Ubg(-self.H), self.Ubg(0)))
         
         #Compute E1, normalise
@@ -341,6 +347,7 @@ class DJL(object):
         """
         # Change eta in NX dim
         if not NX0 == self.NX:
+            
             ETA = scipy.fftpack.dst(self.eta, type=2, axis = 1)/(2*self.NX)
             # Increase resolution: pad with zeros
             if NX0 > self.NX :
@@ -350,9 +357,8 @@ class DJL(object):
                 ETA0 = ETA[:,:NX0]
             # Inverse DST-II
             self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 1)
-            
         self.prepareGrid(NX0, self.NZ)
-        
+
         #Change eta in NZ dim
         if not NZ0 == self.NZ:
             ETA = scipy.fftpack.dst(self.eta, type=2, axis = 0)/(2*self.NZ)
@@ -364,9 +370,8 @@ class DJL(object):
                 ETA0 = ETA[:NZ0, :]
             # Inverse DST-II
             self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 0)
-        
         self.prepareGrid(self.NX, NZ0)    
-   
+
     #########################################
     #######       gradient:         #########
     #########################################

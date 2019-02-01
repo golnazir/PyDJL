@@ -2,9 +2,6 @@ import time
 import numpy
 from DJL import DJL
 
-from IPython import embed
-# clear all
-
 # Specify the parameters of the problem
 A  = 5e-5   #APE for wave (m^4/s^2)
 L  = 4.0    #domain width (m)

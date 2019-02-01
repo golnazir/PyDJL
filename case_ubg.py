@@ -4,6 +4,9 @@ Created on Wed Jan 30 22:03:45 2019
 
 @author: GolnazIR
 """
+import time
+import numpy
+from DJL import DJL
 
 # Specify the parameters of the problem 
 A  = 1e-4   # APE for wave (m^4/s^2)
@@ -43,7 +46,7 @@ for U0 in numpy.linspace(0, 0.1, 6):
     # Find the solution of the DJL equation
     # Use a reduced epsilon for these intermediate waves
     djl.refine_solution(epsilon = 1e-3)
-    breakpoint()
+    
     # Uncomment to view progress at each step
 #    djl.diagnostics()
 #    djl.plot() 
