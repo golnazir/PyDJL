@@ -36,11 +36,8 @@ class DJL(object):
         else:
             self.rho = rho
             self.rhoz = rhoz
-        
-        if intrho is None:
-            self.intrho = zer
-        else:
-            self.intrho = intrho
+
+        self.intrho = intrho
             
         if Ubg is None:
             self.Ubg   = zer

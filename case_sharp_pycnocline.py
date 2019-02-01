@@ -13,8 +13,6 @@ A  = 5e-5   # APE for wave (m^4/s^2)
 L  = 3.0    # domain width (m)
 H  = 0.1    # domain depth (m)
 
-relax=0.15  # use strong underrelaxation
-
 # Specify the general density profile which takes d_d as a second parameter
 a_d = 0.02
 z0_d= 0.025
@@ -58,18 +56,18 @@ for ddindex in range (0, len(ddlist)):
     djl.rhoz = lambda z: frhoz(z, d_d)
 #    print('djl.rhoz')
     #Iterate the DJL solution
-    djl.refine_solution()
+    djl.refine_solution(relax=0.15) # use strong underrelaxation
     
     # Uncomment to view progress at each step
 #    djl.diagnostics()
 #    djl.plot ()
 
 # Reduce epsilon, iterate to convergence
-djl.refine_solution(epsilon=1e-5)
+djl.refine_solution(epsilon=1e-5, relax=0.15)
 
 # Raise resolution, iterate to convergence
 djl.change_resolution(2048,1024)    # NX=2048; NZ=1024;
-djl.refine_solution()
+djl.refine_solution(epsilon=1e-5, relax=0.15)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n' %(end_time - start_time))
