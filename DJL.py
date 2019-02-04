@@ -28,25 +28,14 @@ class DJL(object):
         self.L = L 	#domain width (m)
         self.H = H 	#domain depth (m)
               
-        def zer(z): return numpy.zeros(z.shape)
-        
-        if rho is None:
-            self.rho = zer
-            self.rhoz = zer
-        else:
-            self.rho = rho
-            self.rhoz = rhoz
 
+        self.rho = rho
+        self.rhoz = rhoz
         self.intrho = intrho
-            
-        if Ubg is None:
-            self.Ubg   = zer
-            self.Ubgz  = zer
-            self.Ubgzz = zer
-        else: 
-            self.Ubg   = Ubg
-            self.Ubgz  = Ubgz
-            self.Ubgzz = Ubgzz
+
+        self.Ubg   = Ubg
+        self.Ubgz  = Ubgz
+        self.Ubgzz = Ubgzz
 
         #  Default min and max number of iterations for the iterative procedure.
         self.min_iteration = 10
@@ -125,8 +114,7 @@ class DJL(object):
         
         self.kse = (numpy.pi / self.L) * numpy.arange(0, self.NX)
         self.mse = (numpy.pi / self.H) * numpy.arange(0, self.NZ)
-#        self.msi = -1/self.ms
-#        self.msi [self.ms==0] = 0
+
         ksm = numpy.tile(self.kso,(self.NZ ,1))
         msm = numpy.tile(self.mso,(self.NX, 1)).transpose()
         self.LAP = -ksm**2 - msm**2
@@ -171,26 +159,35 @@ class DJL(object):
         Finds an initial guess for eta and c via weakly nonlinear theory
         """
         eta = 0
-        Dz   = self.diffmatrix(self.dz, self.NZ, 1, 'not periodic');
-        Dzz  = self.diffmatrix(self.dz, self.NZ, 2, 'not periodic');
+        Dz   = diffmatrix(self.dz, self.NZ, 1, 'not periodic');
+        Dzz  = diffmatrix(self.dz, self.NZ, 2, 'not periodic');
         Dzzc = Dzz[1:-1, 1:-1] # cut the endpoints for Dirichlet conditions
 
         #get n2, u and uzz data
         tmpz   = self.zc[1:-1]      # column vector
         n2vec  = self.N2(tmpz) 
-        
-        uvec   = self.Ubg(tmpz)
-        uzzvec = self.Ubgzz(tmpz)
-        
+
         #create diagonal matrices
         N2d  = numpy.diag(n2vec )
-        Ud   = numpy.diag(uvec  )
-        Uzzd = numpy.diag(uzzvec)
         
-        #setup quadratic eigenvalue problem
-        B0 = sparse.csr_matrix(N2d + Ud*Ud*Dzzc - Ud*Uzzd)
-        B1 = sparse.csr_matrix(-2*Ud*Dzzc + Uzzd)
-        B2 = sparse.csr_matrix(Dzzc)
+        if (self.Ubg is None):
+            #setup quadratic eigenvalue problem
+            B0 = sparse.csr_matrix(N2d)
+            B1 = sparse.csr_matrix((self.NZ-2, self.NZ-2))
+            B2 = sparse.csr_matrix(Dzzc)
+        else:
+            uvec   = self.Ubg(tmpz)
+            uzzvec = self.Ubgzz(tmpz)
+            
+            Ud   = numpy.diag(uvec  )
+            Uzzd = numpy.diag(uzzvec)
+            
+            #setup quadratic eigenvalue problem
+            B0 = sparse.csr_matrix(N2d + Ud*Ud*Dzzc - Ud*Uzzd)
+            B1 = sparse.csr_matrix(-2*Ud*Dzzc + Uzzd)
+            B2 = sparse.csr_matrix(Dzzc)
+                
+        
         
         #Solve eigenvalue problem; extract first eigenvalue & eigenmode
         Z = sparse.csr_matrix((self.NZ-2, self.NZ-2))
@@ -206,7 +203,6 @@ class DJL(object):
         
         #Add boundary conditions
         phi = numpy.pad(V2, (1,1), 'constant')
-#        breakpoint()
         uvec = numpy.pad(uvec, (1,1), 'constant', constant_values = (self.Ubg(-self.H), self.Ubg(0)))
         
         #Compute E1, normalise
@@ -242,7 +238,7 @@ class DJL(object):
             # Find the APE (DSS2011 Eq 21 & 22)
             apedens = self.compute_apedens(eta0, self.ZC)
             F = numpy.sum(self.wsine * apedens)
-            
+
             # New b0 by rescaling
             afact = numpy.max([numpy.min([self.A/F , 1.05]), 0.95])
             b0 = b0 * afact
@@ -266,12 +262,13 @@ class DJL(object):
     def compute_apedens(self, eta, z ):
         """
         Use Gauss quadrature to find ape density
-        """
+        """        
         if self.intrho is None:
             A1 = self.rho(z - eta)
             A2 = 0.0
             for ii in range (0, numpy.size(self.wl)):
                 A2 -= self.wl[ii] *self.rho(z-self.zl[ii]*eta)
+            aa = (A1+A2)
             apedens = (A1+A2)*eta
         else:
             B1 = self.rho(z-eta)*eta
@@ -279,61 +276,7 @@ class DJL(object):
             apedens = B1 + B2
 
         return (self.g * apedens)
-    
-#        apedens = self.rho(z - eta)
-#        for ii in range (0, numpy.size(self.wl)):
-#            apedens = apedens  - self.wl[ii] *self.rho(z-self.zl[ii]*eta)
-
-#        return (self.g * apedens * eta)   
-    
-    #########################################
-    #######        diffmatrix:      #########
-    #########################################
-    def diffmatrix(self, dx, N, order, ends):
-        """
-        Constructs a centered differentiation matrix with up/down wind
-        at the ends
-        - order can be 1 (1st deriv) or 2 (2nd deriv)
-        """
-        a = [0,0,0]
-        a [order] = 1
-        dx2 = dx*dx
-        
-        #Upwind 2nd order coefs
-        matu  =[[1    , 1    , 1],
-                [-2*dx,-dx   , 0],
-                [2*dx2, dx2/2, 0]]
-        coefsu = numpy.linalg.solve(matu,a)
-        
-        #Centered 2nd order coefs
-        matc = [[1    , 1, 1     ],
-                [-dx  , 0, dx    ],
-                [dx2/2, 0, dx2/2 ]]
-        coefsc = numpy.linalg.solve(matc, a)
-
-        #Downwind 2nd order coefs
-        matd=[[1, 1    , 1    ],
-              [0, dx   , 2*dx ],
-              [0, dx2/2, 2*dx2]]
-        coefsd = numpy.linalg.solve(matd, a)
-
-        D = numpy.zeros((N,N))
-        
-        #Centered in the interior
-        for ii in range (1,N-1):
-            D[ii, [ii-1, ii+0, ii+1]] = coefsc
-        
-        if ends == 'periodic':
-            #use centered at the ends (wrap around)
-            D[0  , [N-1, 0  , 1]] = coefsc
-            D[N-1, [N-2, N-1, 0]] = coefsc
-        else:
-            #Downwind at the first point
-            D[0, [0, 1, 2]] = coefsd
-            #Upwind at the last point
-            D[N-1, [N-3, N-2, N-1]] = coefsu            
-        return D
-
+ 
     #########################################
     #####     change_resolution:    #########
     #########################################
@@ -387,8 +330,7 @@ class DJL(object):
             Fpx[:, 0] = 0            
             fx = scipy.fftpack.idct(Fpx, type = 2, axis = 1)/(2*self.NX)
         else:
-            ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)
-#            ke = (numpy.pi/self.L) *numpy.arange(0,self.NX)            
+            ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)         
             Fpx = numpy.einsum('ij,j-> ij', ftrx, -self.kse)
 
             # Now we have DCT-II coefficients, we need to drop the first one
@@ -405,7 +347,6 @@ class DJL(object):
             
         else : 
             ftrz = scipy.fftpack.dct(f, type = 2, axis = 0)
-#            me  = (numpy.pi/self.H) * numpy.arange(0,self.NZ)
             Fpz = numpy.einsum('ij, i -> ij' , ftrz , -self.mse)
             Fpz = numpy.roll(Fpz,-1, axis = 0 )
             fz  = scipy.fftpack.idst(Fpz, type= 2, axis = 0)/(2*self.NZ)
@@ -431,7 +372,8 @@ class DJL(object):
             print ("sure, eta is defined.")
         
         #Check for nonzero velocity profile, save time below if it's zero
-        uflag = numpy.any(self.Ubg(self.zc))
+        # TO DO: Delete uflag 
+        #uflag = numpy.any(self.Ubg(self.zc))
         
         flag = True; iteration = 0;
         while flag: 
@@ -444,7 +386,7 @@ class DJL(object):
             S = self.N2(self.ZC - eta0) * eta0/(self.g*self.H)
 
             # Compute R, assemble RHS
-            if uflag:
+            if self.Ubg is not None:
                 eta0x, eta0z = self.gradient(eta0, 'odd', 'odd')
                 uhat  = self.Ubg (self.ZC - eta0)/c0
                 uhatz = self.Ubgz(self.ZC - eta0)/c0
@@ -587,37 +529,26 @@ class DJL(object):
     #######        residual :       #########
     #########################################
     def residual(self, z):
-        print ('TO DO: residual')
         """
         DJL residual using Eq 2.32 in (Stastna, 2001)
         """
         # Compute left hand side
         ETA = scipy.fftpack.dstn(self.eta, type = 2)/(4*self.NX*self.NZ)
+        
+        
         LHS = ETA * self.LAP
         lhs = scipy.fftpack.idstn(LHS, type = 2)
         
         # Compute right hand side
         etax, etaz = self.gradient(self.eta, 'odd', 'odd')
-        Umc = self.Ubg(z - self.eta)-self.c
-        aa = -(self.Ubgz(z-self.eta)/Umc)
-        bb = (1 - (etax**2 + (1-etaz)**2))
-#        cc = -self.N2(z-self.eta)
-#        dd = self.eta/(Umc**2)
-        cc = - self.N2(z-self.eta)*self.eta
-        dd = (Umc**2)
-        
-        ee = aa*bb
-#        ff = cc*dd
-        ff = cc/dd
-        
-        ll = ee + ff
-        
-        rhs = -(self.Ubgz(z-self.eta)/Umc)*(1 - (etax**2 + (1-etaz)**2))
-        - self.N2(z-self.eta)*self.eta/(Umc**2)
+        if self.Ubg is None:
+            rhs = - self.N2(z-self.eta)*self.eta/(self.c**2)
+        else:
+            Umc = self.Ubg(z - self.eta)-self.c
+            rhs = -(self.Ubgz(z-self.eta)/Umc)*(1 - (etax**2 + (1-etaz)**2)) - self.N2(z-self.eta)*self.eta/(Umc**2)
         
         # Residual
         residual = lhs-rhs
-#        breakpoint()
         return residual, lhs, rhs
 
     #########################################
@@ -657,11 +588,11 @@ class DJL(object):
 
         # Residual in DJL equation
         residual, LHS, RHS = self.residual( self.ZC)
-#        breakpoint()
+
         res = numpy.max(numpy.abs(residual))
         lhs = numpy.max(numpy.abs(LHS))
         print('Relative residual %e ' % (res/lhs) )
-#        breakpoint()
+
     
      #########################################
      #######            plot :       #########
@@ -706,3 +637,53 @@ class DJL(object):
         #    end
         #end
         #drawnow
+
+
+
+#########################################
+#######        diffmatrix:      #########
+#########################################
+def diffmatrix(dx, N, order, ends):
+    """
+    Constructs a centered differentiation matrix with up/down wind
+    at the ends
+    - order can be 1 (1st deriv) or 2 (2nd deriv)
+    """
+    a = [0,0,0]
+    a [order] = 1
+    dx2 = dx*dx
+    
+    #Upwind 2nd order coefs
+    matu  =[[1    , 1    , 1],
+            [-2*dx,-dx   , 0],
+            [2*dx2, dx2/2, 0]]
+    coefsu = numpy.linalg.solve(matu,a)
+    
+    #Centered 2nd order coefs
+    matc = [[1    , 1, 1     ],
+            [-dx  , 0, dx    ],
+            [dx2/2, 0, dx2/2 ]]
+    coefsc = numpy.linalg.solve(matc, a)
+
+    #Downwind 2nd order coefs
+    matd=[[1, 1    , 1    ],
+          [0, dx   , 2*dx ],
+          [0, dx2/2, 2*dx2]]
+    coefsd = numpy.linalg.solve(matd, a)
+
+    D = numpy.zeros((N,N))
+    
+    #Centered in the interior
+    for ii in range (1,N-1):
+        D[ii, [ii-1, ii+0, ii+1]] = coefsc
+    
+    if ends == 'periodic':
+        #use centered at the ends (wrap around)
+        D[0  , [N-1, 0  , 1]] = coefsc
+        D[N-1, [N-2, N-1, 0]] = coefsc
+    else:
+        #Downwind at the first point
+        D[0, [0, 1, 2]] = coefsd
+        #Upwind at the last point
+        D[N-1, [N-3, N-2, N-1]] = coefsu            
+    return D

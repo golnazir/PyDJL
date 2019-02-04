@@ -40,21 +40,16 @@ ddlist=[0.01, 0.005, 0.0025, 0.001, 0.00075]
 for ddindex in range (0, len(ddlist)):
     NX = NXlist[ddindex]
     NZ = NZlist[ddindex]
-    print ('*****ddindex = ' , ddindex)
     if(ddindex == 0):
         djl.prepareGrid(NX,NZ)
     else:
         # Resolution for this wave
         djl.change_resolution(NX,NZ)
-        print('******************resolution chanaged')
     
     # Density profile for this wave with specified d_d
     d_d  = ddlist[ddindex]
-#    print('***d_d = ', d_d)
     djl.rho  = lambda z: frho (z, d_d)
-#    print('djl.rho')
     djl.rhoz = lambda z: frhoz(z, d_d)
-#    print('djl.rhoz')
     #Iterate the DJL solution
     djl.refine_solution(relax=0.15) # use strong underrelaxation
     
@@ -71,7 +66,7 @@ djl.refine_solution(epsilon=1e-5, relax=0.15)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n' %(end_time - start_time))
-breakpoint()
+
 # Compute and plot the diagnostics
 djl.diagnostics()
 djl.plot()
