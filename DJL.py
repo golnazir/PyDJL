@@ -20,7 +20,7 @@ class DJL(object):
     #######  djles_common: #########
     ################################
         
-    def __init__(self, A, L, H, NX, NZ, rho=None, rhoz = None, intrho=None, Ubg=None, Ubgz = None, Ubgzz=None):
+    def __init__(self, A, L, H, NX, NZ, rho, rhoz, intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None):
         """
         Constructor
         """
@@ -66,7 +66,7 @@ class DJL(object):
 #        self.epsilon = 1e-4
 
         # If rho0 is not speficied, assume we are using non-dimensional density
-        self.rho0 = 1
+        self.rho0 = rho0
         
         # Get Legendre points and weights for Gauss quadrature
         self.zl, self.wl = numpy.polynomial.legendre.leggauss(self.NL)
@@ -203,7 +203,10 @@ class DJL(object):
         
         #Add boundary conditions
         phi = numpy.pad(V2, (1,1), 'constant')
-        uvec = numpy.pad(uvec, (1,1), 'constant', constant_values = (self.Ubg(-self.H), self.Ubg(0)))
+        if self.Ubg is None:
+            uvec = numpy.zeros(phi.shape)
+        else:
+            uvec = numpy.pad(uvec, (1,1), 'constant', constant_values = (self.Ubg(-self.H), self.Ubg(0)))
         
         #Compute E1, normalise
         E1 = numpy.divide(clw*phi , clw-uvec)
@@ -287,7 +290,6 @@ class DJL(object):
         """
         # Change eta in NX dim
         if not NX0 == self.NX:
-            
             ETA = scipy.fftpack.dst(self.eta, type=2, axis = 1)/(2*self.NX)
             # Increase resolution: pad with zeros
             if NX0 > self.NX :
@@ -559,11 +561,17 @@ class DJL(object):
         Computes a variety of diagnostics from the solved eta and c
         """ 
         # Compute velocities (Via SL2002 Eq 27)
+         # Compute velocities (Via SL2002 Eq 27)
         etax , etaz = self.gradient(self.eta, 'odd', 'odd')
-        u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz
-        w = -self.Ubg(self.ZC - self.eta) *( -etax) - self.c*etax
-        uwave = u - self.Ubg (self.ZC)
-        
+        if self.Ubg is None:
+            u = self.c*etaz
+            w = -self.c*etax
+            uwave = u
+        else:
+            u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz
+            w = -self.Ubg(self.ZC - self.eta) *( -etax) - self.c*etax
+            uwave = u - self.Ubg (self.ZC)
+                
         # Wave kinteic energy density (m^2/s^2)
         kewave = 0.5*(uwave**2 + w**2)
         

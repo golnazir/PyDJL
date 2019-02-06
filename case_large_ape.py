@@ -24,16 +24,11 @@ rho    = lambda z: 1 - a_d * numpy.tanh((z+z0_d)/d_d)
 intrho = lambda z: z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
 rhoz   = lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
 
-# The velocity profile (zero for this case) (m/s)
-Ubg  = lambda z: 0*z
-Ubgz = lambda z: 0*z
-Ubgzz= lambda z: 0*z
-
 # Find the solution
 start_time = time.time()
 
 # Create DJL object
-djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho, Ubg, Ubgz, Ubgzz)
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho = intrho)
 
 # Start with 1% of target APE, raise to target APE in 5 steps
 for djl.A in numpy.linspace(Atarget/100, Atarget, 5):

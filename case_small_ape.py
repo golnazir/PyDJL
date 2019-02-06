@@ -17,25 +17,19 @@ rho    = lambda z: 1-a_d*numpy.tanh((z+z0_d)/d_d)
 intrho = lambda z: z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
 rhoz   = lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
 
-# The velocity profile (zero for this case) (m/s)
-Ubg  = lambda z: 0*z 
-Ubgz = lambda z: 0*z
-Ubgzz= lambda z: 0*z
-
 ################################
 ####### Find the solution ######
 ################################ 
 start_time = time.time()
 
 #  Create DJL object
-djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho, Ubg, Ubgz, Ubgzz)
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho = intrho)
 
 # Find the solution of the DJL equation
 djl.refine_solution()
 
 # Increase the resolution, and iterate to convergence
 djl.change_resolution(64, 80)
-#breakpoint()
 djl.refine_solution( epsilon=1e-6)
 
 end_time = time.time()

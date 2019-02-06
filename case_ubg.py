@@ -34,7 +34,7 @@ fUbgzz= lambda z,U0: (-2*U0/(dj*dj))*(1.0/numpy.cosh((z+zj)/dj)**2)*numpy.tanh((
 start_time = time.time()
 
 #  Create DJL object
-djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho)
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho)
 
 # Start with U0=0, raise it to U0=0.1 over 6 increments
 for U0 in numpy.linspace(0, 0.1, 6):
