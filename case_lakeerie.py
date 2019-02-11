@@ -12,13 +12,10 @@ from DJL import DJL
 # Specify the parameters of the problem 
 # Load sample data file: two columns, depth and temperature
 data = numpy.genfromtxt('case_lakeerie.txt', delimiter=',')
-zdata = data[:,0]
-T = data[:,1]
 
-# Find a value for z=0 by linear extrapolation
-f = interpolate.interp1d(zdata, T, fill_value= 'extrapolate')
-T = numpy.append(T, f(0))
-zdata = numpy.append(zdata, 0)
+zdata = numpy.arange(-16.5, 0.5,0.5)
+f = interpolate.interp1d(data[:,0], data[:,1], fill_value= 'extrapolate')
+T = f(zdata)
 
 # Convert to density with linear EOS (note: full density)
 rho0 = 1000
@@ -59,7 +56,7 @@ djl.refine_solution()
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time- start_time))
-breakpoint()
+
 # Compute and plot the diagnostics
 djl.diagnostics()
 #djl.plot()
