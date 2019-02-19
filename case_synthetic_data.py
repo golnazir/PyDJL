@@ -7,6 +7,7 @@ Created on Sat Feb  2 16:58:38 2019
 import time
 import numpy
 from DJL import DJL, diffmatrix
+from DJL import Diagnostic
 from scipy import interpolate
 
 # Specify the parameters of the problem 
@@ -65,21 +66,21 @@ for alpha in numpy.linspace(0,1,4):
     # Iterate the DJL solution
     djl.refine_solution(epsilon = 1e-3)
     # uncomment to view progress here
-#    djl.diagnostics()
+#    diag = Diagnostic(djl)
 #    djl.plot() 
 
 # Increase resolution, restore default epsilon, iterate to convergence
 djl.change_resolution(64, 64)   # NX=64; NZ=64; 
 djl.refine_solution()         # clear epsilon
 # uncomment to view progress here
-#djl.diagnostics()
+#diag = Diagnostic(djl)
 #djl.plot() 
 
 # Increase resolution, iterate to convergence
 djl.change_resolution(128, 128)     # NX=128; NZ=128;
 djl.refine_solution()
 # uncomment to view progress here
-#djl.diagnostics()
+#diag = Diagnostic(djl)
 #djl.plot()
 
 # Increase to the final resolution, iterate to convergence
@@ -90,5 +91,5 @@ end_time = time.time()
 print('Total wall clock time: %f seconds\n'% (end_time - start_time))
 breakpoint()
 # Compute and plot the diagnostics
-djl.diagnostics()
-djl.plot()
+#diag = Diagnostic(djl)
+#djl.plot()

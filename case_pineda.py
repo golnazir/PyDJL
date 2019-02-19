@@ -8,6 +8,9 @@ import time
 import numpy
 from scipy import interpolate
 from DJL import DJL
+from DJL import Diagnostic
+
+import matplotlib.pyplot as plt
 
 # Load density data. The text file contains an approximate reproduction of
 # the smoothed curve in Figure 9 (a) from Pineda et al (2015).
@@ -24,8 +27,10 @@ rhozdata = numpy.gradient(rhodata,zdata)
 # Now build piecewise interpolating polynomials from the data,
 # and convert them to function handles for the solver
 #method='pchip';  % pchip respects monotonicity
-rho  = lambda z: interpolate.PchipInterpolator(zdata, rhodata )(z)
-rhoz = lambda z: interpolate.PchipInterpolator(zdata, rhozdata)(z)
+#rho  = lambda z: interpolate.PchipInterpolator(zdata, rhodata )(z)
+#rhoz = lambda z: interpolate.PchipInterpolator(zdata, rhozdata)(z)
+rho  = lambda z: interpolate.interp1d(zdata, rhodata )(z)
+rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
 
 # The velocity profile (zero for this case) (m/s)
 #Ubg=@(z) 0*z; Ubgz=@(z) 0*z; Ubgzz=@(z) 0*z;
@@ -52,9 +57,9 @@ for i in numpy.linspace(8.04e4, 3.62e5, 5):   # APE (kg m/s^2)
     djl.refine_solution(epsilon = 1e-3)
 
 
-# Increase resolution, reduce epsilon, iterate to convergence
-djl.change_resolution(64, 64)    # NX=64 NZ=64
-djl.refine_solution(epsilon=1e-6)
+## Increase resolution, reduce epsilon, iterate to convergence
+#djl.change_resolution(64, 64)    # NX=64 NZ=64
+#djl.refine_solution(epsilon=1e-4)
 
 #djl.change_resolution(128, 128)     #NX=128; NZ=128; 
 #djl.refine_solution(epsilon=1e-5)
@@ -69,24 +74,35 @@ end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time-start_time))
 
 # Compute diagnostics, plot wave
-djl.diagnostics()
+diag = Diagnostic(djl)
 #djl.plot()
-djl.pressure()
+diag.pressure(djl)
 
 # Construct Pineda et al. (2015) Figure 11
-#figure(11)
-#subplot(4,1,1:2)
-#contour(XC-L/2,ZC,density,[1022.3:0.3:1024.7],'k')
-#xlim([-1 1]*300); title('Density contours')
-#
-#subplot(4,1,3)
-#plot(xc-L/2,interp2(XC,ZC,u,xc,-H+1),'k')
-#xlim([-1 1]*300); grid on; title('U at 1 mab');
-#
-#subplot(4,1,4)
-#plot(xc-L/2,interp2(XC,ZC,p,xc,-H+1),'k')
-#xlim([-1 1]*300); grid on; title('Pressure minus background pressure')
+plt.figure(11, figsize = (8,11))
+#plt.clf()
+plt.subplot(2,1,1)
+plt.contour(djl.XC-djl.L/2, djl.ZC, diag.density, numpy.arange(1022.3,1024.7, 0.3), colors = 'black')
+plt.xlim(-300, 300)
+plt.ylim(-djl.H, 0)
+plt.title('Density contours')
 
+plt.subplot(4,1,3)
+f = interpolate.RectBivariateSpline(djl.xc, djl.zc, diag.u.transpose(), kx =1 , ky = 1)
+plt.plot(djl.xc-djl.L/2, f(djl.xc,-djl.H+1), color = 'black')
+plt.xlim(-300, 300)
+plt.ylim(-0.4, 0)
+plt.grid(True)
+plt.title('U at 1 mab')
+
+plt.subplot(4,1,4)
+f = interpolate.RectBivariateSpline(djl.xc, djl.zc, diag.p.transpose())
+plt.plot(djl.xc-djl.L/2, f(djl.xc,-djl.H+1), color = 'black')
+plt.xlim(-300, 300)
+plt.grid(True) 
+plt.title('Pressure minus background pressure')
+
+plt.tight_layout()
 
 ############################################################################
 #### Find the solid curves shown in Pineda et al. (2015) Figure 10 #########
@@ -112,26 +128,28 @@ djl2 = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0)
 
 djl2.refine_solution(epsilon = 1e-3)
 
-djl2.change_resolution(64, 64)      # NX=64; NZ=64
-djl2.refine_solution(epsilon=1e-4)
+#djl2.change_resolution(64, 64)      # NX=64; NZ=64
+#djl2.refine_solution(epsilon=1e-4)
 
-djl2.change_resolution(128, 128)    # NX=128; NZ=128
-djl2.refine_solution(epsilon=1e-5)
+#djl2.change_resolution(128, 128)    # NX=128; NZ=128
+#djl2.refine_solution(epsilon=1e-5)
 
 # Compute and record quantities
-djl2.diagnostics()
-djl2.pressure()
-    
+diag2 = Diagnostic(djl2)
+diag2.pressure(djl2)
+
 WArec[0] = djl2.wave_ampl
 Crec[0]  = djl2.c
 
-#u1mab = interp2(XC,ZC,u,xc,-H+1);
-#[~,idx] = max(abs(u1mab));
-#Urec(ai) = u1mab(idx);
-#
-#p1mab = interp2(XC,ZC,p,xc,-H+1);
-#[~,idx] = max(abs(p1mab));
-#Prec(ai) = p1mab(idx);
+f1 = interpolate.interp2d(djl2.XC,djl2.ZC,diag2.u)
+u1mab = f1(djl2.xc,-djl2.H+1)
+val = u1mab.flat[numpy.abs(u1mab).argmax()]
+Urec[0] = val
+
+f2 = interpolate.interp2d(djl2.XC,djl2.ZC, diag2.p)
+p1mab = f2(djl2.xc,-djl2.H+1);
+val = p1mab.flat[numpy.abs(p1mab).argmax()]
+Prec[0] = val
 
 for ai in range (1,len(Alist)):
     djl2.A = Alist[ai]
@@ -140,46 +158,50 @@ for ai in range (1,len(Alist)):
     djl2.change_resolution(32, 32)      # NX=32; NZ=32;
     djl2.refine_solution(epsilon=1e-3)
      
-    djl2.change_resolution(64, 64)      # NX=64; NZ=64
-    djl2.refine_solution(epsilon=1e-4)
-
-    djl2.change_resolution(128, 128)    # NX=128; NZ=128
-    djl2.refine_solution(epsilon=1e-5)
+#    djl2.change_resolution(64, 64)      # NX=64; NZ=64
+#    djl2.refine_solution(epsilon=1e-4)
+#
+#    djl2.change_resolution(128, 128)    # NX=128; NZ=128
+#    djl2.refine_solution(epsilon=1e-5)
 
     # Compute and record quantities
-    djl2.diagnostics()
-    djl2.pressure()
+    diag3 = Diagnostic(djl2)
+    diag3.pressure(djl2)
 
     WArec[ai] = djl2.wave_ampl
     Crec[ai] = djl2.c
 
-#    u1mab = interp2(XC,ZC,u,xc,-H+1);
-#    [~,idx] = max(abs(u1mab));
-#    Urec(ai) = u1mab(idx);
-#
-#    p1mab = interp2(XC,ZC,p,xc,-H+1);
-#    [~,idx] = max(abs(p1mab));
-#    Prec(ai) = p1mab(idx);
-
+    f1 = interpolate.interp2d(djl2.XC, djl2.ZC, diag3.u)
+    u1mab = f1(djl2.xc,-djl2.H+1)
+    val = u1mab.flat[numpy.abs(u1mab).argmax()]
+    Urec[ai] = val
+    
+    f2 = interpolate.interp2d(djl2.XC, djl2.ZC, diag3.p)
+    p1mab = f2(djl2.xc,-djl2.H+1);
+    val = p1mab.flat[numpy.abs(p1mab).argmax()]
+    Prec[ai] = val
+    
+    
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time - start_time))
 
 # Construct Pineda et al. (2015) Figure 10
-#figure(10)
-#subplot(3,1,1)
-#plot(-WArec, Crec,'k'); 
-#xlim([0 23]); 
-#grid on; 
-#title('c (m/s)');
-#
-#subplot(3,1,2)
-#plot(-WArec, Urec,'k'); 
-#xlim([0 23]); 
-#grid on; 
-#title('U at 1 mab (m/s)');
-#
-#subplot(3,1,3)
-#plot(-WArec, Prec,'k'); 
-#xlim([0 23]); 
-#grid on; 
-#title('P at 1 mab (Pa)');
+plt.clf()
+plt.figure(10)
+plt.subplot(3,1,1)
+plt.plot(-WArec, Crec,color = 'black') 
+plt.xlim(0, 23)
+plt.grid(True)
+plt.title('c (m/s)')
+
+plt.subplot(3,1,2)
+plt.plot(-WArec, Urec,color = 'black')
+plt.xlim(0, 23)
+plt.grid(True) 
+plt.title('U at 1 mab (m/s)')
+
+plt.subplot(3,1,3)
+plt.plot(-WArec, Prec,color = 'black')
+plt.xlim(0, 23) 
+plt.grid(True)
+plt.title('P at 1 mab (Pa)')

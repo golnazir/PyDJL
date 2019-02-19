@@ -8,6 +8,7 @@ import time
 import numpy
 from scipy import interpolate
 from DJL import DJL
+from DJL import Diagnostic
 
 # Specify the parameters of the problem 
 # Load sample data file: two columns, depth and temperature
@@ -58,5 +59,5 @@ end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time- start_time))
 
 # Compute and plot the diagnostics
-djl.diagnostics()
+diag = Diagnostic(djl)
 #djl.plot()

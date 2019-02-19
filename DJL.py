@@ -9,8 +9,263 @@ import time
 #from IPython import embed
 
 import scipy.io as sio  # TO DO: DELETE THIS LINE
+import inspect
+
+def cmp(v):
+    m = sio.loadmat("C:\\Users\\GolnazIR\\matlabToPythonPrj\\DJLES\\var.mat")
+    v1 = m[v]
+    ccc = inspect.currentframe().f_back.f_locals.items()
+    for ke,v2 in ccc:
+        if ke==v:
+            break
+    e = numpy.max(numpy.abs(v1-v2))
+    print('{} error: {}'.format(v,e))
+    
+class Diagnostic(object):
+    """
+    Diagnostic object
+    """
+    def __init__ (self, djl):
+        """
+        Constructor
+        """
+        self.djl = djl
+        
+        # Compute_diagnostic to assign rhe self variables.
+        self.compute_diagnostics(self.djl)
+        
+        
+    #########################################
+    #######     shift_grid:         #########
+    #########################################
+    def shift_grid(self, fc,NX, NZ, symmx = None, symmz = None):
+        """
+        Shifts the data fc from the interior grid to the endpoint grid
+        Specify symmetry as [] to skip shifting a dimension
+        """
+        if symmx == 'odd':
+            # Compute DST-II, trim one coefficient, inverse DST-I, pad zeros at each end
+            FC = scipy.fftpack.dst (fc, type = 2 , axis = 1)/(2*NX) #(2*self.NX)
+            FC = FC[:, :-1]
+            fc = scipy.fftpack.idst(FC, type = 1, axis = 1)
+            fc = numpy.concatenate((numpy.zeros([fc.shape[0], 1]), fc, 
+                                    numpy.zeros([fc.shape[0], 1])), axis= 1)
+        if symmx == 'even':
+
+            FC = scipy.fftpack.dct(fc, type=2, axis = 1)/(2*NX) #(2*self.NX)
+            FC = numpy.concatenate((FC, numpy.zeros([FC.shape[0], 1])), axis = 1)
+            fc = scipy.fftpack.idct(FC, type=1, axis = 1)       
+        
+        if symmz == 'odd':
+            FC = scipy.fftpack.dst(fc, type = 2, axis = 0)/(2*NZ) #(2*self.NZ)
+            FC = FC[:-1, :]
+            fc = scipy.fftpack.idst(FC, type = 1, axis = 0)
+            fc = numpy.concatenate((numpy.zeros([1, fc.shape[1]]), fc,
+                                    numpy.zeros([1, fc.shape[1]])), axis=0)
+        if symmz == 'even':
+            # Compute DCT-II, pad one zero at end, inverse DCT-I
+            FC = scipy.fftpack.dct(fc, type=2, axis = 0)/(2*NZ) #(2*self.NZ)            
+            FC = numpy.concatenate((FC, numpy.zeros([1,FC.shape[1]])), axis = 0)
+            fc = scipy.fftpack.idct(FC, type=1, axis = 0)
+    
+        fe = fc
+        return fe
+    
+    #########################################
+    #######        wavelength :     #########
+    #########################################
+    def wavelength(self, eta, NX):
+        """
+        L_w following via Eq 3.6 in
+        Aghsaee, P., Boegman, L., and K. G. Lamb. 2010. "Breaking of shoaling 
+        internal solitary waves". J. Fluid Mech. 659 289-317. doi:10.1017/S002211201000248X.
+        We return 2*L_w as the wavelength
+        """
+        iz, ix = numpy.unravel_index(numpy.argmax(numpy.abs(eta)), eta.shape)
+        etaL = eta[iz, :]
+        w  = self.djl.quadweights(NX) *(self.djl.L/numpy.pi)
+        Lw = numpy.sum(w*etaL) / eta[iz,ix]
+        # We take wavelength as twice Lw
+        self.wavelength = 2*Lw
+        return self.wavelength
+    
+    #########################################
+    #######        residual :       #########
+    #########################################
+    def residual(self, z, eta, c, NX, NZ ):
+        """
+        DJL residual using Eq 2.32 in (Stastna, 2001)
+        """
+        # Compute left hand side
+        ETA = scipy.fftpack.dstn(eta, type = 2)/(4*NX*NZ)
+
+        LHS = ETA * self.djl.LAP
+        lhs = scipy.fftpack.idstn(LHS, type = 2)
+        
+        # Compute right hand side
+        etax, etaz = self.djl.gradient(eta, 'odd', 'odd')
+        if self.djl.Ubg is None:
+            rhs = - self.djl.N2(z-eta)*eta/(c**2)
+        else:
+            Umc = self.djl.Ubg(z - eta)-c
+            rhs = -(self.djl.Ubgz(z-eta)/Umc)*(1 - (etax**2 + (1-etaz)**2)) - self.djl.N2(z-eta)*eta/(Umc**2)
+        
+        # Residual
+        residual = lhs-rhs
+        return residual, lhs, rhs
+    
+    #########################################
+    #######        diagnostics:     #########
+    #########################################
+    def compute_diagnostics(self, djl):
+        """
+        Computes a variety of diagnostics from the solved eta and c
+        """ 
+
+        # Compute velocities (Via SL2002 Eq 27)
+        # Compute velocities (Via SL2002 Eq 27)
+        etax , etaz = djl.gradient(djl.eta, 'odd', 'odd')
+        if djl.Ubg is None:
+            self.u = djl.c*etaz
+            self.w = -djl.c*etax
+            self.uwave = self.u
+        else:
+            self.u = djl.Ubg (djl.ZC - djl.eta) *(1-etaz) + djl.c*etaz
+            self.w = -djl.Ubg(djl.ZC - djl.eta) *( -etax) - djl.c*etax
+            self.uwave = self.u - djl.Ubg (djl.ZC)
+                
+        # Wave kinteic energy density (m^2/s^2)
+        self.kewave = 0.5*(self.uwave**2 + self.w**2)
+        
+        # APE density (m^2/s^2)
+        apedens = djl.compute_apedens(djl.eta, djl.ZC)
+       
+        # Get gradient of u and w 
+        self.ux, self.uz = djl.gradient(self.u, 'even', 'even')
+        self.wx, self.wz = djl.gradient(self.w, 'even', 'odd' )
+
+        # Surface strain rate
+        uxze = self.shift_grid(self.ux, djl.NX, djl.NZ, symmz = 'even')   # shift ux to z endpoints
+        self.surf_strain = -uxze[-1,:]                    # = -du/dx(z=0)
+        
+        # Vorticity, density and Richardson number
+        self.vorticity =self.uz - self.wx
+        self.density = djl.rho(djl.ZC-djl.eta)
+        self.ri = djl.N2(djl.ZC-djl.eta)/(self.uz*self.uz)
+        
+        #Wavelength (currently works only on interior grid)
+        self.wavelength = self.wavelength(djl.eta, djl.NX)
+
+        # Residual in DJL equation
+        self.residual, LHS, RHS = self.residual(djl.ZC, djl.eta, djl.c, djl.NX, djl.NZ )
+
+        res = numpy.max(numpy.abs(self.residual))
+        lhs = numpy.max(numpy.abs(LHS))
+        print('Relative residual %e ' % (res/lhs) )
+    
+    #########################################
+    #######        pressure :       #########
+    #########################################
+    def pressure(self, djl):
+        """
+        djles_pressure.m - Pressure computations. Specifically, we compute
+          a) the hydrostatic background pressure
+          b) the hydrostatic pressure due to the internal solitary wave
+          c) the non-hydrostatic pressure due to the internal wave
+          d) residuals from substituting the results into the governing equations
+        
+        The pressure solve part is courtesy of Derek Steinmoeller.
+        
+        Note: This is only tested/verified for cases without a background current.
+        ToDo: Make it work with background current cases.
+        """
+         
+        #### Hydrostatic background pressure ###
+        # We break rho(z) into two parts: a constant-N background state 
+        # and an odd function of z:  rho(z) = rholin(z) + rhoodd(z)
+        rhomax = djl.rho(-djl.H)
+        rhomin = djl.rho(0)
+        drho = rhomax - rhomin
+        rholin = lambda z : rhomin + (z/ - djl.H)*drho
+        rhoodd = lambda z : djl.rho(z) - rholin(z)
+         
+        # We integrate dplin/dz = -g*rholin(z) analytically to get plin(z)
+        plin = lambda z: - djl.g *rhomin * z + djl.g*z**2 / (2*djl.H)*drho
+  
+        # Now we use a sine transform to integrate dpodd/dz = -g*rhoodd(z)
+        temp = scipy.fftpack.dst(-djl.g*rhoodd(djl.zc), type = 2, axis = 0)
+        tempz = - temp/djl.mso
+        tempz  = numpy.roll(tempz, 1, axis = 0)
+        tempz[0]  = 0
+        podd = scipy.fftpack.idct(tempz, type = 2 , axis = 0)/(2*djl.NZ)
+        poddze = self.shift_grid(numpy.asmatrix(podd).transpose(),djl.NX, djl.NZ, symmz = 'even' )    #get podd on z endpoint grid
+        podd = podd - poddze[-1,0]     # enforce podd(0)=0
+      
+        # Total background pressure is plin+podd
+        pbg = plin(djl.zc) + podd
+        
+        # #### Wave pressure ###
+        
+        # First find the internal solitary wave hydrostatic pressure
+        rhowave = djl.rho(djl.ZC -djl.eta) -djl.rho(djl.ZC)
+        
+        # Integrate dph/dz = -g*rhowave vertically (odd, odd symmetry in x,z)
+        temp = scipy.fftpack.dst(-djl.g*rhowave, type = 2, axis = 0)
+        tempz = numpy.einsum('ij, i -> ij', temp, -1.0/djl.mso)
+        tempz = numpy.roll(tempz, 1, axis = 0)
+        tempz[0,:] = 0
+        ph = scipy.fftpack.idct(tempz, type = 2 , axis = 0)/(2*djl.NZ)
+        phze = self.shift_grid(ph, djl.NX, djl.NZ, symmz = 'even')  #get ph on z endpoint grid
+        ph = ph - phze[-1,:]
+        
+        # Now solve for total wave pressure
+        T1 = -((self.u-djl.c)*self.ux + self.w*self.uz)   # odd, even symmetry in x,z
+        T2 = -((self.u-djl.c)*self.wx + self.w*self.wz + (djl.g/djl.rho0)*rhowave)   #even, odd symmetry in x,z
+        
+        # Get divergence of T vector
+        Tx, tmpz  = djl.gradient(T1,  'odd', 'even')
+        tmpx, Tz  = djl.gradient(T2, 'even',  'odd')
+        
+        # The Poisson problem has even, even symmetry in x,z
+        RHS = scipy.fftpack.dctn(djl.rho0*(Tx+Tz), type = 2)
+        P = RHS * djl.INVLAPE
+        self.p = scipy.fftpack.idctn(P, type = 2 )/(4*djl.NZ*djl.NX)
+        self.p = self.p - self.p[-1,-1]            #Use p(inf, 0) = 0 (no wave pressure in the farfield)
+        pnh = self.p - ph                # non-hydrostatic part
+
+        #### Residuals ####
+        # Now we verify that the results are a steady state solution to
+        # the Boussinesq equations (trend terms and divergence should be zero)
+        px   ,pz   = djl.gradient(self.p  , 'even', 'even')
+        tmpx ,pnhz = djl.gradient(pnh, 'even', 'even')
+        tmpx ,phz  = djl.gradient(ph , 'even', 'even')
+        rwx  ,rwz  = djl.gradient(rhowave,'odd', 'odd')
+        
+        # Boussinesq equations
+        ut  = -px/djl.rho0 -(self.u-djl.c)*self.ux - self.w*self.uz
+        wt  = -pz/djl.rho0 -(self.u-djl.c)*self.wx - self.w*self.wz - (djl.g/djl.rho0)*rhowave
+        div = self.ux + self.wz
+        rt  = -(self.u-djl.c)*rwx - self.w*(djl.rhoz(djl.ZC) + rwz)
+        
+        # Also verify that the split pressure satisfies the vertical
+        # momentum eqn and hydrostatic balance
+        wtnh = -pnhz/djl.rho0 -(self.u-djl.c)*self.wx - self.w*self.wz
+        hb   = -phz /djl.rho0 -(djl.g/djl.rho0)*rhowave
+        
+        # Compute relative errors for each
+        ue = numpy.max(numpy.abs(ut)) / numpy.max(numpy.abs(-px/djl.rho0))
+        we = numpy.max(numpy.abs(wt)) / numpy.max(numpy.abs(-pz/djl.rho0))
+        de = numpy.max(numpy.abs(div))/ numpy.max(numpy.abs(self.ux))
+        re = numpy.max(numpy.abs(rt)) / numpy.max(numpy.abs(-(self.u-djl.c)*rwx))
+        
+        wnhe=numpy.max(numpy.abs(wtnh)) / numpy.max(numpy.abs(-pnhz/djl.rho0))
+        hbe =numpy.max(numpy.abs(hb))   / numpy.max(numpy.abs(phz))
+        
+        print('ut, wt, div, rho_t residuals: %.1e, %.1e, %.1e, %.1e\n'%(ue,we,de,re))
+        print('wnht, hb, residuals: %.1e, %.1e\n'%(wnhe,hbe))
 
 
+    
 class DJL(object):
     """
     DJL object
@@ -119,6 +374,12 @@ class DJL(object):
         self.LAP = -ksm**2 - msm**2
         self.INVLAP = 1/self.LAP
 
+        ksme = numpy.tile(self.kse,(self.NZ ,1))
+        msme = numpy.tile(self.mse,(self.NX, 1)).transpose()
+        self.LAPE = -ksme**2 - msme**2
+        self.LAPE[0,0] = 1
+        self.INVLAPE = 1/self.LAPE
+        self.INVLAPE[0,0] = 0
         
     #########################################
     #######     sinequadrature:      ########
@@ -185,9 +446,7 @@ class DJL(object):
             B0 = sparse.csr_matrix(N2d + Ud*Ud*Dzzc - Ud*Uzzd)
             B1 = sparse.csr_matrix(-2*Ud*Dzzc + Uzzd)
             B2 = sparse.csr_matrix(Dzzc)
-                
-        
-        
+      
         #Solve eigenvalue problem; extract first eigenvalue & eigenmode
         Z = sparse.csr_matrix((self.NZ-2, self.NZ-2))
         I = sparse.eye(self.NZ-2)
@@ -373,9 +632,7 @@ class DJL(object):
             print ("sure, eta is defined.")
         
         #Check for nonzero velocity profile, save time below if it's zero
-        # TO DO: Delete uflag 
-        #uflag = numpy.any(self.Ubg(self.zc))
-        
+      
         flag = True; iteration = 0;
         while flag: 
             # Iteration shift
@@ -472,238 +729,17 @@ class DJL(object):
 
         print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, self.wave_ampl))
     
-    #########################################
-    #######     shift_grid:         #########
-    #########################################
-    def shift_grid(self, fc, symmx = None, symmz = None):
-        """
-        Shifts the data fc from the interior grid to the endpoint grid
-        Specify symmetry as [] to skip shifting a dimension
-        """
-        if symmx == 'odd':
-            # Compute DST-II, trim one coefficient, inverse DST-I, pad zeros at each end
-            FC = scipy.fftpack.dst (fc, type = 2 , axis = 1)/(2*self.NX)
-            FC = FC[:, :-1]
-            fc = scipy.fftpack.idst(FC, type = 1, axis = 1)
-            fc = numpy.concatenate((numpy.zeros([fc.shape[0], 1]), fc, 
-                                    numpy.zeros([fc.shape[0], 1])), axis= 1)
-        if symmx == 'even':
-
-            FC = scipy.fftpack.dct(fc, type=2, axis = 1)/(2*self.NX)
-            FC = numpy.concatenate((FC, numpy.zeros([FC.shape[0], 1])), axis = 1)
-            fc = scipy.fftpack.idct(FC, type=1, axis = 1)       
-        
-        if symmz == 'odd':
-            FC = scipy.fftpack.dst(fc, type = 2, axis = 0)/(2*self.NZ)
-            FC = FC[:-1, :]
-            fc = scipy.fftpack.idst(FC, type = 1, axis = 0)
-            fc = numpy.concatenate((numpy.zeros([1, fc.shape[1]]), fc,
-                                    numpy.zeros([1, fc.shape[1]])), axis=0)
-        if symmz == 'even':
-            # Compute DCT-II, pad one zero at end, inverse DCT-I
-            FC = scipy.fftpack.dct(fc, type=2, axis = 0)/(2*self.NZ)            
-            FC = numpy.concatenate((FC, numpy.zeros([1,FC.shape[1]])), axis = 0)
-            fc = scipy.fftpack.idct(FC, type=1, axis = 0)
     
-        fe = fc
-        return fe
     
-    #########################################
-    #######        wavelength :     #########
-    #########################################
-    def wavelength(self):
-        """
-        L_w following via Eq 3.6 in
-        Aghsaee, P., Boegman, L., and K. G. Lamb. 2010. "Breaking of shoaling 
-        internal solitary waves". J. Fluid Mech. 659 289-317. doi:10.1017/S002211201000248X.
-        We return 2*L_w as the wavelength
-        """
-        iz, ix = numpy.unravel_index(numpy.argmax(numpy.abs(self.eta)), self.eta.shape)
-        etaL = self.eta[iz, :]
-        w  = self.quadweights(self.NX) *(self.L/numpy.pi)
-        Lw = numpy.sum(w*etaL) / self.eta[iz,ix]
-        # We take wavelength as twice Lw
-        wavelength = 2*Lw
-        return wavelength
+    
 
-    #########################################
-    #######        residual :       #########
-    #########################################
-    def residual(self, z):
-        """
-        DJL residual using Eq 2.32 in (Stastna, 2001)
-        """
-        # Compute left hand side
-        ETA = scipy.fftpack.dstn(self.eta, type = 2)/(4*self.NX*self.NZ)
-        
-        
-        LHS = ETA * self.LAP
-        lhs = scipy.fftpack.idstn(LHS, type = 2)
-        
-        # Compute right hand side
-        etax, etaz = self.gradient(self.eta, 'odd', 'odd')
-        if self.Ubg is None:
-            rhs = - self.N2(z-self.eta)*self.eta/(self.c**2)
-        else:
-            Umc = self.Ubg(z - self.eta)-self.c
-            rhs = -(self.Ubgz(z-self.eta)/Umc)*(1 - (etax**2 + (1-etaz)**2)) - self.N2(z-self.eta)*self.eta/(Umc**2)
-        
-        # Residual
-        residual = lhs-rhs
-        return residual, lhs, rhs
+    
 
-    #########################################
-    #######        diagnostics:     #########
-    #########################################
-    def diagnostics(self):
-        """
-        Computes a variety of diagnostics from the solved eta and c
-        """ 
-        # Compute velocities (Via SL2002 Eq 27)
-         # Compute velocities (Via SL2002 Eq 27)
-        etax , etaz = self.gradient(self.eta, 'odd', 'odd')
-        if self.Ubg is None:
-            u = self.c*etaz
-            w = -self.c*etax
-            uwave = u
-        else:
-            u =  self.Ubg(self.ZC - self.eta) *(1-etaz) + self.c*etaz
-            w = -self.Ubg(self.ZC - self.eta) *( -etax) - self.c*etax
-            uwave = u - self.Ubg (self.ZC)
-                
-        # Wave kinteic energy density (m^2/s^2)
-        kewave = 0.5*(uwave**2 + w**2)
-        
-        # APE density (m^2/s^2)
-        apedens = self.compute_apedens(self.eta, self.ZC)
-       
-        # Get gradient of u and w 
-        ux, uz = self.gradient(u, 'even', 'even')
-        wx, wz = self.gradient(w, 'even', 'odd' )
-        
-        # Surface strain rate
-        uxze = self.shift_grid(ux, symmz = 'even')   # shift ux to z endpoints
-        surf_strain = -uxze[-1,:]                    # = -du/dx(z=0)
-        
-        # Vorticity, density and Richardson number
-        vorticity = uz - wx
-        density = self.rho(self.ZC-self.eta)
-        ri = self.N2(self.ZC-self.eta)/(uz*uz)       
-        
-        #Wavelength (currently works only on interior grid)
-        wavelength = self.wavelength()
-
-        # Residual in DJL equation
-        residual, LHS, RHS = self.residual( self.ZC)
-
-        res = numpy.max(numpy.abs(residual))
-        lhs = numpy.max(numpy.abs(LHS))
-        print('Relative residual %e ' % (res/lhs) )
+    
 
 
 
-    #########################################
-    #######        pressure :       #########
-    #########################################
-    def pressure(self):
-        """
-        djles_pressure.m - Pressure computations. Specifically, we compute
-          a) the hydrostatic background pressure
-          b) the hydrostatic pressure due to the internal solitary wave
-          c) the non-hydrostatic pressure due to the internal wave
-          d) residuals from substituting the results into the governing equations
-        
-        The pressure solve part is courtesy of Derek Steinmoeller.
-        
-        Note: This is only tested/verified for cases without a background current.
-        ToDo: Make it work with background current cases.
-        """
-         
-        #### Hydrostatic background pressure ###
-        # We break rho(z) into two parts: a constant-N background state 
-        # and an odd function of z:  rho(z) = rholin(z) + rhoodd(z)
-        rhomax = self.rho(-self.H)
-        rhomin = self.rho(0)
-        drho = rhomax - rhomin
-        rholin = lambda z : rhomin + (z/ - self.H)*drho
-        rhoodd = lambda z : self.rho(z) - rholin(z)
-         
-        # We integrate dplin/dz = -g*rholin(z) analytically to get plin(z)
-        plin = lambda z: - self.g *rhomin * z + self.g*z**2 / (2*self.H)*drho
-  
-        # Now we use a sine transform to integrate dpodd/dz = -g*rhoodd(z)
-        temp = scipy.fftpack.dst(-self.g*rhoodd(self.zc), type = 2, axis = 0)
-        tempz = - temp/self.mso
-        tempz  = numpy.roll(tempz, 1, axis = 0)
-        tempz[0]  = 0
-        podd = scipy.fftpack.idct(tempz, type = 2 , axis = 0)/(2*self.NZ)
-        poddze = self.shift_grid(numpy.asmatrix(podd).transpose(), symmz = 'even' )    #get podd on z endpoint grid
-        podd = podd - poddze[-1,0]     # enforce podd(0)=0
-      
-        # Total background pressure is plin+podd
-        pbg = plin(self.zc) + podd
-        
-        # #### Wave pressure ###
-        
-        # First find the internal solitary wave hydrostatic pressure
-        rhowave = self.rho(self.ZC - self.eta) - self.rho(self.ZC)
-        # Integrate dph/dz = -g*rhowave vertically (odd, odd symmetry in x,z)
-        temp = scipy.fftpack.dst(-self.g*rhowave, type = 2, axis = 0)
-        tempz = numpy.einsum('ij, i -> ij', temp, -1.0/self.mso)
-        tempz = numpy.roll(tempz, 1, axis = 0)
-        tempz[0,:] = 0
-        ph = scipy.fftpack.idct(tempz, type = 2 , axis = 0)/(2*self.NZ)
-        phze = self.shift_grid(ph, symmz = 'even')  #get ph on z endpoint grid
-        ph = ph - phze[-1,:]
-        breakpoint()
-        
-        # Now solve for total wave pressure
-#        T1 = -((u-c).*ux + w.*uz)   # odd, even symmetry in x,z
-        ##T2 = -((u-c).*wx + w.*wz + (g/rho0)*rhowave); % even, odd symmetry in x,z
-        ##% Get divergence of T vector
-        ##[Tx, ~] = djles_gradient(T1, ks, ms, 'odd', 'even', targetgrid);
-        ##[~, Tz] = djles_gradient(T2, ks, ms, 'even', 'odd', targetgrid);
-        ##% The Poisson problem has even, even symmetry in x,z
-        ##temp = djles_extend(rho0*(Tx+Tz), 'even', 'even', targetgrid);   % extend
-        ##temp = real(ifft2(INVLAP.*fft2(temp)));                          % invert
-        ##p = temp(1:size(eta,1), 1:size(eta,2));                          % extract
-        ##p = p - p(end,end);  % Use p(inf, 0) = 0 (no wave pressure in the farfield)
-        ##pnh = p - ph;  % non-hydrostatic part
-        ##
-        ##clear T1 T2 Tx Tz phze poddze temp
-        ##
-        ##
-        ##%%% Residuals %%%
-        ##% Now we verify that the results are a steady state solution to
-        ##% the Boussinesq equations (trend terms and divergence should be zero)
-        ##[px ,pz  ] = djles_gradient(p      , ks, ms, 'even', 'even', targetgrid);
-        ##[~  ,pnhz] = djles_gradient(pnh    , ks, ms, 'even', 'even', targetgrid);
-        ##[~  ,phz ] = djles_gradient(ph     , ks, ms, 'even', 'even', targetgrid);
-        ##[rwx,rwz ] = djles_gradient(rhowave, ks, ms, 'odd' , 'odd' , targetgrid);
-        ##
-        ##% Boussinesq equations
-        ##ut = -px/rho0 -(u-c).*ux -w.*uz;
-        ##wt = -pz/rho0 -(u-c).*wx -w.*wz - (g/rho0)*rhowave;
-        ##div = ux+wz;
-        ##rt = -(u-c).*rwx - w.*(rhoz(Z) + rwz);
-        ##
-        ##% Also verify that the split pressure satisfies the vertical
-        ##% momentum eqn and hydrostatic balance
-        ##wtnh = -pnhz/rho0 -(u-c).*wx -w.*wz;
-        ##hb = -phz/rho0 -(g/rho0)*rhowave;
-        ##
-        ##% Compute relative errors for each
-        ##ue=max(abs(ut (:))) / max(abs(-px(:)/rho0));
-        ##we=max(abs(wt (:))) / max(abs(-pz(:)/rho0));
-        ##de=max(abs(div(:))) / max(abs(ux(:)));
-        ##re=max(abs(rt (:))) / max(abs(-(u(:)-c).*rwx(:)));
-        ##
-        ##wnhe=max(abs(wtnh(:))) / max(abs(-pnhz(:)/rho0));
-        ##hbe =max(abs(hb  (:))) / max(abs(phz(:)));
-        ##
-        ##fprintf('ut, wt, div, rho_t residuals: %.1e, %.1e, %.1e, %.1e\n',ue,we,de,re);
-        ##fprintf('wnht, hb, residuals: %.1e, %.1e\n',wnhe,hbe);
-
+    
 
 
 

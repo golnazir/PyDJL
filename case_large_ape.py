@@ -7,6 +7,7 @@ Created on Wed Jan 30 11:47:25 2019
 import time
 import numpy
 from DJL import DJL
+from DJL import Diagnostic
 
 # Specify the parameters of the problem 
 Atarget = 2e-3      # APE for wave (m^4/s^2)
@@ -41,11 +42,11 @@ djl.refine_solution(epsilon = 1e-5)
 
 # Increase the resolution, and iterate to convergence
 djl.change_resolution(512,256)  # NX0=512,NZ0=256
-djl.refine_solution()
+djl.refine_solution(epsilon = 1e-5)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'% (end_time - start_time));
 
 # Compute and plot the diagnostics
-djl.diagnostics()
-djl.plot()
+diag = Diagnostic(djl)
+#djl.plot()
