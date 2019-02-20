@@ -27,13 +27,10 @@ rhozdata = numpy.gradient(rhodata,zdata)
 # Now build piecewise interpolating polynomials from the data,
 # and convert them to function handles for the solver
 #method='pchip';  % pchip respects monotonicity
-#rho  = lambda z: interpolate.PchipInterpolator(zdata, rhodata )(z)
-#rhoz = lambda z: interpolate.PchipInterpolator(zdata, rhozdata)(z)
-rho  = lambda z: interpolate.interp1d(zdata, rhodata )(z)
-rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
-
-# The velocity profile (zero for this case) (m/s)
-#Ubg=@(z) 0*z; Ubgz=@(z) 0*z; Ubgzz=@(z) 0*z;
+rho  = lambda z: interpolate.PchipInterpolator(zdata, rhodata )(z)
+rhoz = lambda z: interpolate.PchipInterpolator(zdata, rhozdata)(z)
+#rho  = lambda z: interpolate.interp1d(zdata, rhodata )(z)
+#rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
 
 L  =   1200   # domain width (m)
 H  =     57   # domain depth (m), estimated from Pineda et al's Figure 9 (a)
@@ -57,18 +54,18 @@ for i in numpy.linspace(8.04e4, 3.62e5, 5):   # APE (kg m/s^2)
     djl.refine_solution(epsilon = 1e-3)
 
 
-## Increase resolution, reduce epsilon, iterate to convergence
-#djl.change_resolution(64, 64)    # NX=64 NZ=64
-#djl.refine_solution(epsilon=1e-4)
+# Increase resolution, reduce epsilon, iterate to convergence
+djl.change_resolution(64, 64)    # NX=64 NZ=64
+djl.refine_solution(epsilon=1e-4)
 
-#djl.change_resolution(128, 128)     #NX=128; NZ=128; 
-#djl.refine_solution(epsilon=1e-5)
-#
-#djl.change_resolution(256, 256)     #NX=256; NZ=256; 
-#djl.refine_solution(epsilon = 1e-6)
-#
-#djl.change_resolution(512, 512)     #NX=512; NZ=512; 
-#djl.refine_solution(epsilon = 1e-7)
+djl.change_resolution(128, 128)     #NX=128; NZ=128; 
+djl.refine_solution(epsilon=1e-5)
+
+djl.change_resolution(256, 256)     #NX=256; NZ=256; 
+djl.refine_solution(epsilon = 1e-6)
+
+djl.change_resolution(512, 512)     #NX=512; NZ=512; 
+djl.refine_solution(epsilon = 1e-7)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time-start_time))
@@ -103,6 +100,8 @@ plt.grid(True)
 plt.title('Pressure minus background pressure')
 
 plt.tight_layout()
+plt.ion()
+plt.show()
 
 ############################################################################
 #### Find the solid curves shown in Pineda et al. (2015) Figure 10 #########
@@ -128,11 +127,11 @@ djl2 = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0)
 
 djl2.refine_solution(epsilon = 1e-3)
 
-#djl2.change_resolution(64, 64)      # NX=64; NZ=64
-#djl2.refine_solution(epsilon=1e-4)
+djl2.change_resolution(64, 64)      # NX=64; NZ=64
+djl2.refine_solution(epsilon=1e-4)
 
-#djl2.change_resolution(128, 128)    # NX=128; NZ=128
-#djl2.refine_solution(epsilon=1e-5)
+djl2.change_resolution(128, 128)    # NX=128; NZ=128
+djl2.refine_solution(epsilon=1e-5)
 
 # Compute and record quantities
 diag2 = Diagnostic(djl2)
@@ -158,11 +157,11 @@ for ai in range (1,len(Alist)):
     djl2.change_resolution(32, 32)      # NX=32; NZ=32;
     djl2.refine_solution(epsilon=1e-3)
      
-#    djl2.change_resolution(64, 64)      # NX=64; NZ=64
-#    djl2.refine_solution(epsilon=1e-4)
-#
-#    djl2.change_resolution(128, 128)    # NX=128; NZ=128
-#    djl2.refine_solution(epsilon=1e-5)
+    djl2.change_resolution(64, 64)      # NX=64; NZ=64
+    djl2.refine_solution(epsilon=1e-4)
+
+    djl2.change_resolution(128, 128)    # NX=128; NZ=128
+    djl2.refine_solution(epsilon=1e-5)
 
     # Compute and record quantities
     diag3 = Diagnostic(djl2)
@@ -205,3 +204,7 @@ plt.plot(-WArec, Prec,color = 'black')
 plt.xlim(0, 23) 
 plt.grid(True)
 plt.title('P at 1 mab (Pa)')
+
+plt.tight_layout()
+plt.ion()
+plt.show()

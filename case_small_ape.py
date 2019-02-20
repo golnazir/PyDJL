@@ -2,6 +2,7 @@ import time
 import numpy
 from DJL import DJL
 from DJL import Diagnostic
+from DJL import plot
 
 # Specify the parameters of the problem
 A  = 5e-5   #APE for wave (m^4/s^2)
@@ -19,7 +20,6 @@ intrho = lambda z: z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
 rhoz   = lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
 
 ################################
-####### Find the solution ######
 ################################ 
 start_time = time.time()
 
@@ -39,5 +39,4 @@ print("Total wall clock time: %f seconds" % (end_time - start_time))
 
 # Compute and plot the diagnostics
 diag = Diagnostic(djl)
-#diag.pressure(djl)
-#djl.plot()
+plot(djl, diag, 2)

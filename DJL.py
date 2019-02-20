@@ -2,6 +2,7 @@
 
 import numpy
 import numpy.matlib
+import matplotlib.pyplot as plt
 from scipy import sparse
 import scipy.sparse.linalg
 import scipy.fftpack
@@ -138,7 +139,7 @@ class Diagnostic(object):
         self.kewave = 0.5*(self.uwave**2 + self.w**2)
         
         # APE density (m^2/s^2)
-        apedens = djl.compute_apedens(djl.eta, djl.ZC)
+        self.apedens = djl.compute_apedens(djl.eta, djl.ZC)
        
         # Get gradient of u and w 
         self.ux, self.uz = djl.gradient(self.u, 'even', 'even')
@@ -497,8 +498,8 @@ class DJL(object):
             eta0[-1,:] = 0
             
             # Find the APE (DSS2011 Eq 21 & 22)
-            apedens = self.compute_apedens(eta0, self.ZC)
-            F = numpy.sum(self.wsine * apedens)
+            self.apedens = self.compute_apedens(eta0, self.ZC)
+            F = numpy.sum(self.wsine * self.apedens)
 
             # New b0 by rescaling
             afact = numpy.max([numpy.min([self.A/F , 1.05]), 0.95])
@@ -666,8 +667,8 @@ class DJL(object):
 
             # Find the APE (DSS2011 Eq 21 & 22)
             t0 = time.time()
-            apedens = self.compute_apedens(eta0, self.ZC)
-            F = numpy.sum(self.wsine[:]* apedens[:])
+            self.apedens = self.compute_apedens(eta0, self.ZC)
+            F = numpy.sum(self.wsine[:]* self.apedens[:])
 
             #Compute S1, S2 (components of DSS2011 Eq 20)
             S1 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* nu[:])
@@ -729,71 +730,92 @@ class DJL(object):
 
         print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, self.wave_ampl))
     
+        
+#########################################
+#######            plot :       #########
+#########################################
+def plot( djl, diag, plottype):
+    #         if ishandle(1), set(0, 'CurrentFigure', 1); else figure(1); end
+    #clf
+    #set(gcf,'DefaultLineLineWidth',2,'DefaultTextFontSize',12,...
+    #    'DefaultTextFontWeight','bold','DefaultAxesFontSize',12,...
+    #    'DefaultAxesFontWeight','bold');
+    #
+#    plottype = 2
     
+    if (plottype == 1 ):
+        # Plot eta and density(z-eta)
+        plt.subplot(1,2,1)
+        plt.imshow(djl.eta)
+        plt.title('eta (m)')
+        
+        plt.subplot(1,2,2)
+        plt.imshow(diag.density)
+        plt.title('density')
+            
+        for ii in range(1,3):   
+            plt.subplot(1,2,ii)
+            plt.gca().invert_yaxis()
+#            plt.xlim(0, djl.L)
+#            plt.ylim(-djl.H, 0)
+            #axis([0 L -H 0]) 
+            plt.colorbar() 
+            plt.xlabel('x (m)')
+            plt.ylabel('z (m)')
+            
+        
+    elif (plottype == 2): 
+        # Plot eight fields
+        plt.subplot(4,2,1)
+        plt.imshow(djl.eta)
+        plt.title('eta (m)')
+        
+        plt.subplot(4,2,2)
+        plt.imshow(diag.density)
+        plt.title('density')
+        
+        plt.subplot(4,2,3)
+        plt.imshow(diag.uwave)
+        plt.title('u (wave) (m/s)')
+    #    caxis([-1 1]*max(abs(uwave(:))));
     
+        plt.subplot(4,2,4)
+        plt.imshow(diag.w)
+        plt.title('w (m/s)')
+    #    caxis([-1 1]*max(abs(w(:))));
     
-
+        plt.subplot(4,2,5)
+        plt.imshow(diag.kewave)
+        plt.title('kewave (m^2/s^2)')
+    #    caxis([0 1]*max(abs(kewave(:))));
     
+        plt.subplot(4,2,6)
+        plt.imshow(diag.apedens)
+        plt.title('ape density');
+    #    caxis([0 1]*max(abs(apedens(:))));
+        
+        plt.subplot(4,2,7)
+        plt.imshow(diag.ri)
+        plt.title('Ri')
+    #    caxis([0.2 1]);
+        
+        plt.subplot(4,2,8)
+        plt.imshow(diag.vorticity)
+        plt.title('vorticity (1/s)')
+    #    caxis([-1 1]*max(abs(vorticity(:))));
+        
+        for ii in range(1,9):
+            plt.subplot(4,2,ii)
+            plt.gca().invert_yaxis()
+            
+            #axis([0 L -H 0]); 
+            plt.colorbar() 
+            plt.xlabel('x (m)')
+            plt.ylabel('z (m)')
 
-    
-
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-     #########################################
-     #######            plot :       #########
-     #########################################
-#     def plot(self):
-#         print('TO DO: plot')
-        #         if ishandle(1), set(0, 'CurrentFigure', 1); else figure(1); end
-        #clf
-        #set(gcf,'DefaultLineLineWidth',2,'DefaultTextFontSize',12,...
-        #    'DefaultTextFontWeight','bold','DefaultAxesFontSize',12,...
-        #    'DefaultAxesFontWeight','bold');
-        #
-        #plottype=1;
-        #
-        #if plottype==1
-        #    % Plot eta and density(z-eta)
-        #    subplot(1,2,1); imagesc(x,z,eta); title('eta (m)');
-        #    subplot(1,2,2); imagesc(x,z,density); title('density');
-        #    for ii=1:2
-        #        subplot(1,2,ii); set(gca,'ydir','normal');
-        #        axis([0 L -H 0]); colorbar; xlabel('x (m)'); ylabel('z (m)');
-        #    end
-        #elseif plottype==2
-        #    % Plot eight fields
-        #    subplot(4,2,1); imagesc(x,z,eta);       title('eta (m)');
-        #    subplot(4,2,2); imagesc(x,z,density);   title('density');
-        #    subplot(4,2,3); imagesc(x,z,uwave);     title('u (wave) (m/s)');
-        #    caxis([-1 1]*max(abs(uwave(:))));
-        #    subplot(4,2,4); imagesc(x,z,w);         title('w (m/s)');
-        #    caxis([-1 1]*max(abs(w(:))));
-        #    subplot(4,2,5); imagesc(x,z,kewave);    title('kewave (m^2/s^2)');
-        #    caxis([0 1]*max(abs(kewave(:))));
-        #    subplot(4,2,6); imagesc(x,z,apedens);   title('ape density');
-        #    caxis([0 1]*max(abs(apedens(:))));
-        #    subplot(4,2,7); imagesc(x,z,ri);        title('Ri');
-        #    caxis([0.2 1]);
-        #    subplot(4,2,8); imagesc(x,z,vorticity); title('vorticity (1/s)');
-        #    caxis([-1 1]*max(abs(vorticity(:))));
-        #    for ii=1:8
-        #        subplot(4,2,ii); set(gca,'ydir','normal');
-        #        axis([0 L -H 0]); colorbar; xlabel('x (m)'); ylabel('z (m)');
-        #    end
-        #end
-        #drawnow
+    plt.tight_layout()
+    plt.ion()
+    plt.show()
 
 
 
