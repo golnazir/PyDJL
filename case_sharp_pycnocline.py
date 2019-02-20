@@ -2,11 +2,11 @@
 """
 Created on Thu Jan 31 10:45:26 2019
 
-@author: GolnazIR
+@author: Golnaz Irannejad
 """
 import time
 import numpy
-from DJL import DJL
+from DJL import DJL, Diagnostic, plot
 
 # Specify the parameters of the problem 
 A  = 5e-5   # APE for wave (m^4/s^2)
@@ -59,10 +59,6 @@ for ddindex in range (1, len(ddlist)):
     #Iterate the DJL solution
     djl.refine_solution(relax=0.15) # use strong underrelaxation
     
-    # Uncomment to view progress at each step
-#    djl.diagnostics()
-#    djl.plot ()
-    
 # Reduce epsilon, iterate to convergence
 djl.refine_solution(epsilon=1e-5, relax=0.15)
 
@@ -74,5 +70,5 @@ end_time = time.time()
 print('Total wall clock time: %f seconds\n' %(end_time - start_time))
 
 # Compute and plot the diagnostics
-djl.diagnostics()
-#djl.plot()
+diag = Diagnostic(djl)
+plot(djl, diag, 2)

@@ -7,9 +7,7 @@ Created on Sat Feb  9 20:28:03 2019
 import time
 import numpy
 from scipy import interpolate
-from DJL import DJL
-from DJL import Diagnostic
-
+from DJL import DJL, Diagnostic, plot
 import matplotlib.pyplot as plt
 
 # Load density data. The text file contains an approximate reproduction of
@@ -27,10 +25,10 @@ rhozdata = numpy.gradient(rhodata,zdata)
 # Now build piecewise interpolating polynomials from the data,
 # and convert them to function handles for the solver
 #method='pchip';  % pchip respects monotonicity
-rho  = lambda z: interpolate.PchipInterpolator(zdata, rhodata )(z)
-rhoz = lambda z: interpolate.PchipInterpolator(zdata, rhozdata)(z)
-#rho  = lambda z: interpolate.interp1d(zdata, rhodata )(z)
-#rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
+#rho  = lambda z: interpolate.PchipInterpolator(zdata, rhodata )(z)
+#rhoz = lambda z: interpolate.PchipInterpolator(zdata, rhozdata)(z)
+rho  = lambda z: interpolate.interp1d(zdata, rhodata )(z)
+rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
 
 L  =   1200   # domain width (m)
 H  =     57   # domain depth (m), estimated from Pineda et al's Figure 9 (a)
@@ -72,7 +70,7 @@ print('Total wall clock time: %f seconds\n'%(end_time-start_time))
 
 # Compute diagnostics, plot wave
 diag = Diagnostic(djl)
-#djl.plot()
+plot(djl, diag, 2)
 diag.pressure(djl)
 
 # Construct Pineda et al. (2015) Figure 11

@@ -6,8 +6,7 @@ Created on Wed Jan 30 11:47:25 2019
 """
 import time
 import numpy
-from DJL import DJL
-from DJL import Diagnostic
+from DJL import DJL, Diagnostic, plot
 
 # Specify the parameters of the problem 
 Atarget = 2e-3      # APE for wave (m^4/s^2)
@@ -49,4 +48,5 @@ print('Total wall clock time: %f seconds\n'% (end_time - start_time));
 
 # Compute and plot the diagnostics
 diag = Diagnostic(djl)
-#djl.plot()
+plot(djl, diag, 2)
+

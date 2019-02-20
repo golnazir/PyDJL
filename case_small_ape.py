@@ -1,15 +1,13 @@
 import time
 import numpy
-from DJL import DJL
-from DJL import Diagnostic
-from DJL import plot
+from DJL import DJL,Diagnostic, plot
 
 # Specify the parameters of the problem
 A  = 5e-5   #APE for wave (m^4/s^2)
 L  = 4.0    #domain width (m)
 H  = 0.2    #domain depth (m)
 NX = 32     #grid
-NZ = 40     #grid
+NZ = 32     #grid
 
 # The unitless density profile (normalized by a reference density rho0)
 a_d = 0.02
@@ -30,7 +28,7 @@ djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho = intrho)
 djl.refine_solution()
 
 # Increase the resolution, and iterate to convergence
-djl.change_resolution(64, 80)
+djl.change_resolution(512, 512)
 djl.refine_solution( epsilon=1e-6)
 
 end_time = time.time()

@@ -7,20 +7,19 @@ from scipy import sparse
 import scipy.sparse.linalg
 import scipy.fftpack
 import time
-#from IPython import embed
 
-import scipy.io as sio  # TO DO: DELETE THIS LINE
-import inspect
-
-def cmp(v):
-    m = sio.loadmat("C:\\Users\\GolnazIR\\matlabToPythonPrj\\DJLES\\var.mat")
-    v1 = m[v]
-    ccc = inspect.currentframe().f_back.f_locals.items()
-    for ke,v2 in ccc:
-        if ke==v:
-            break
-    e = numpy.max(numpy.abs(v1-v2))
-    print('{} error: {}'.format(v,e))
+#import scipy.io as sio  # TO DO: DELETE THIS LINE
+#import inspect
+#
+#def cmp(v):
+#    m = sio.loadmat("C:\\Users\\GolnazIR\\matlabToPythonPrj\\DJLES\\var.mat")
+#    v1 = m[v]
+#    ccc = inspect.currentframe().f_back.f_locals.items()
+#    for ke,v2 in ccc:
+#        if ke==v:
+#            break
+#    e = numpy.max(numpy.abs(v1-v2))
+#    print('{} error: {}'.format(v,e))
     
 class Diagnostic(object):
     """
@@ -122,8 +121,6 @@ class Diagnostic(object):
         """
         Computes a variety of diagnostics from the solved eta and c
         """ 
-
-        # Compute velocities (Via SL2002 Eq 27)
         # Compute velocities (Via SL2002 Eq 27)
         etax , etaz = djl.gradient(djl.eta, 'odd', 'odd')
         if djl.Ubg is None:
@@ -147,7 +144,7 @@ class Diagnostic(object):
 
         # Surface strain rate
         uxze = self.shift_grid(self.ux, djl.NX, djl.NZ, symmz = 'even')   # shift ux to z endpoints
-        self.surf_strain = -uxze[-1,:]                    # = -du/dx(z=0)
+        self.surf_strain = -uxze[-1,:]                                    # = -du/dx(z=0)
         
         # Vorticity, density and Richardson number
         self.vorticity =self.uz - self.wx
@@ -180,7 +177,6 @@ class Diagnostic(object):
         Note: This is only tested/verified for cases without a background current.
         ToDo: Make it work with background current cases.
         """
-         
         #### Hydrostatic background pressure ###
         # We break rho(z) into two parts: a constant-N background state 
         # and an odd function of z:  rho(z) = rholin(z) + rhoodd(z)
@@ -231,16 +227,16 @@ class Diagnostic(object):
         RHS = scipy.fftpack.dctn(djl.rho0*(Tx+Tz), type = 2)
         P = RHS * djl.INVLAPE
         self.p = scipy.fftpack.idctn(P, type = 2 )/(4*djl.NZ*djl.NX)
-        self.p = self.p - self.p[-1,-1]            #Use p(inf, 0) = 0 (no wave pressure in the farfield)
+        self.p = self.p - self.p[-1,-1]  # Use p(inf, 0) = 0 (no wave pressure in the farfield)
         pnh = self.p - ph                # non-hydrostatic part
 
         #### Residuals ####
         # Now we verify that the results are a steady state solution to
         # the Boussinesq equations (trend terms and divergence should be zero)
-        px   ,pz   = djl.gradient(self.p  , 'even', 'even')
-        tmpx ,pnhz = djl.gradient(pnh, 'even', 'even')
-        tmpx ,phz  = djl.gradient(ph , 'even', 'even')
-        rwx  ,rwz  = djl.gradient(rhowave,'odd', 'odd')
+        px   ,pz   = djl.gradient(self.p , 'even', 'even')
+        tmpx ,pnhz = djl.gradient(pnh    , 'even', 'even')
+        tmpx ,phz  = djl.gradient(ph     , 'even', 'even')
+        rwx  ,rwz  = djl.gradient(rhowave, 'odd' , 'odd' )
         
         # Boussinesq equations
         ut  = -px/djl.rho0 -(self.u-djl.c)*self.ux - self.w*self.uz
@@ -333,7 +329,6 @@ class DJL(object):
         self.eta = None
         self.c = None
         
-        
     def N2(self, z):
         """
         Create N2(z) function
@@ -341,7 +336,6 @@ class DJL(object):
         return (-self.g/self.rho0)*self.rhoz(z)
     
     def prepareGrid(self, NX, NZ):
-        
         """
      	Generate the grid and wavenumbers
      	"""
@@ -410,7 +404,6 @@ class DJL(object):
             s = numpy.sum( numpy.sin(m*xj)*(numpy.sin(m*numpy.pi/2)**2)/m)
             w[j] = (2/N/N)*numpy.sin(N*xj)*(numpy.sin(N*numpy.pi/2)**2) + (4/N)*s
         return w
-    
     
     #########################################
     #######     initial_guess:      #########
@@ -530,7 +523,6 @@ class DJL(object):
             A2 = 0.0
             for ii in range (0, numpy.size(self.wl)):
                 A2 -= self.wl[ii] *self.rho(z-self.zl[ii]*eta)
-            aa = (A1+A2)
             apedens = (A1+A2)*eta
         else:
             B1 = self.rho(z-eta)*eta
@@ -624,7 +616,6 @@ class DJL(object):
         in Stastna and Lamb, 2002 (SL2002) and also in Dunphy, Subich 
         and Stastna 2011 (DSS2011).
         """
-        
         #Get initial guess from WNL theory if needed
         if self.eta is None:
             print ("well, eta ISNOT defined after all!")
@@ -735,81 +726,72 @@ class DJL(object):
 #######            plot :       #########
 #########################################
 def plot( djl, diag, plottype):
-    #         if ishandle(1), set(0, 'CurrentFigure', 1); else figure(1); end
-    #clf
-    #set(gcf,'DefaultLineLineWidth',2,'DefaultTextFontSize',12,...
-    #    'DefaultTextFontWeight','bold','DefaultAxesFontSize',12,...
-    #    'DefaultAxesFontWeight','bold');
-    #
-#    plottype = 2
+    plt.clf()
     
+    axis_array = []
     if (plottype == 1 ):
         # Plot eta and density(z-eta)
-        plt.subplot(1,2,1)
-        plt.imshow(djl.eta)
+        axis_array += [plt.subplot(1,2,1)]
+        plt.pcolormesh(djl.XE, djl.ZE, djl.eta)
         plt.title('eta (m)')
         
-        plt.subplot(1,2,2)
-        plt.imshow(diag.density)
+        axis_array += [plt.subplot(1,2,2)]
+        plt.pcolormesh(djl.XE, djl.ZE, diag.density)
         plt.title('density')
             
-        for ii in range(1,3):   
-            plt.subplot(1,2,ii)
+        for ca in axis_array:
+            plt.sca(ca)
             plt.gca().invert_yaxis()
-#            plt.xlim(0, djl.L)
-#            plt.ylim(-djl.H, 0)
-            #axis([0 L -H 0]) 
-            plt.colorbar() 
+            plt.xlim(0, djl.L)
+            plt.ylim(-djl.H, 0)
+            plt.colorbar(aspect = 50) 
             plt.xlabel('x (m)')
             plt.ylabel('z (m)')
             
         
     elif (plottype == 2): 
         # Plot eight fields
-        plt.subplot(4,2,1)
-        plt.imshow(djl.eta)
+        axis_array += [plt.subplot(4,2,1)]
+        plt.pcolormesh(djl.XE, djl.ZE, djl.eta)
         plt.title('eta (m)')
         
-        plt.subplot(4,2,2)
-        plt.imshow(diag.density)
+        axis_array += [plt.subplot(4,2,2)]
+        plt.pcolormesh(djl.XE, djl.ZE, diag.density)
         plt.title('density')
         
-        plt.subplot(4,2,3)
-        plt.imshow(diag.uwave)
+        axis_array += [plt.subplot(4,2,3)]
+        c = numpy.max(numpy.abs(diag.uwave))
+        plt.pcolormesh(djl.XE, djl.ZE,diag.uwave, cmap = 'seismic', vmin = -c, vmax = c)
         plt.title('u (wave) (m/s)')
-    #    caxis([-1 1]*max(abs(uwave(:))));
-    
-        plt.subplot(4,2,4)
-        plt.imshow(diag.w)
-        plt.title('w (m/s)')
-    #    caxis([-1 1]*max(abs(w(:))));
-    
-        plt.subplot(4,2,5)
-        plt.imshow(diag.kewave)
-        plt.title('kewave (m^2/s^2)')
-    #    caxis([0 1]*max(abs(kewave(:))));
-    
-        plt.subplot(4,2,6)
-        plt.imshow(diag.apedens)
-        plt.title('ape density');
-    #    caxis([0 1]*max(abs(apedens(:))));
-        
-        plt.subplot(4,2,7)
-        plt.imshow(diag.ri)
-        plt.title('Ri')
-    #    caxis([0.2 1]);
-        
-        plt.subplot(4,2,8)
-        plt.imshow(diag.vorticity)
-        plt.title('vorticity (1/s)')
-    #    caxis([-1 1]*max(abs(vorticity(:))));
-        
-        for ii in range(1,9):
-            plt.subplot(4,2,ii)
-            plt.gca().invert_yaxis()
             
-            #axis([0 L -H 0]); 
-            plt.colorbar() 
+        axis_array += [plt.subplot(4,2,4)]
+        c = numpy.max(numpy.abs(diag.w))
+        plt.pcolormesh(djl.XE, djl.ZE,diag.w, cmap = 'seismic',vmin = -c, vmax = c)
+        plt.title('w (m/s)')
+    
+        axis_array += [plt.subplot(4,2,5)]
+        plt.pcolormesh(djl.XE, djl.ZE,diag.kewave, cmap= 'hot', vmin =0, vmax = numpy.max(numpy.abs(diag.kewave)))
+        plt.title('kewave (m^2/s^2)')
+    
+        axis_array += [plt.subplot(4,2,6)]
+        plt.pcolormesh(djl.XE, djl.ZE,diag.apedens, cmap= 'hot', vmin =0, vmax = numpy.max(numpy.abs(diag.apedens)))
+        plt.title('ape density');
+        
+        axis_array += [plt.subplot(4,2,7)]
+        plt.pcolormesh(djl.XE, djl.ZE,diag.ri, vmin = 0.2, vmax = 1)
+        plt.title('Ri')
+        
+        axis_array += [plt.subplot(4,2,8)]
+        c = numpy.max(numpy.abs(diag.vorticity))
+        plt.pcolormesh(djl.XE, djl.ZE,diag.vorticity,cmap = 'seismic', vmin = -c, vmax = c)
+        plt.title('vorticity (1/s)')
+        
+        for ca in axis_array:
+            plt.sca(ca)
+            plt.gca().invert_yaxis()
+            plt.xlim(0, djl.L)
+            plt.ylim(-djl.H, 0)
+            plt.colorbar(aspect = 5) 
             plt.xlabel('x (m)')
             plt.ylabel('z (m)')
 
