@@ -271,14 +271,17 @@ class DJL(object):
     #######  djles_common: #########
     ################################
         
-    def __init__(self, A, L, H, NX, NZ, rho, rhoz, intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None):
+    def __init__(self, A, L, H, NX, NZ, rho, rhoz,
+                 intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None,
+                 relax=0.5, epsilon=1e-4,
+                 initial_guess=None,
+                 ):
         """
         Constructor
         """
         self.A = A 	#APE for wave (m^4/s^2)
         self.L = L 	#domain width (m)
         self.H = H 	#domain depth (m)
-              
 
         self.rho = rho
         self.rhoz = rhoz
@@ -303,7 +306,7 @@ class DJL(object):
         # Setting relax=0 prevents the iterations from proceeding, and setting
         # relax=1 simply disables underrelaxation. The default value of 0.5 works
         # well for most cases.
-#        self.relax = 0.5
+        self.relax = relax
 
         # Gravitational acceleration constant (m/s^2)
         self.g = 9.81
@@ -314,7 +317,7 @@ class DJL(object):
 
         # Convergence criteria: Stop iterating when the relative difference between
         # successive iterations differs by less than epsilon
-#        self.epsilon = 1e-4
+        self.epsilon = epsilon
 
         # If rho0 is not speficied, assume we are using non-dimensional density
         self.rho0 = rho0
@@ -326,9 +329,55 @@ class DJL(object):
         
         self.prepareGrid(NX, NZ)
         
-        self.eta = None
-        self.c = None
-        
+        # Cache intrho(ZC) if we have intrho
+        if self.intrho is not None:
+            self.intrho_of_zc = self.intrho(self.ZC)
+
+        # Handle initial guess
+        if initial_guess is None:
+            print ("well, eta ISNOT defined after all!")
+            self.initial_guess()
+        else:
+            print ("sure, eta is defined.")
+            self.import_initial_guess(initial_guess)
+
+        # Solve the wave
+        self.refine_solution()
+
+    def import_initial_guess(self, guess):
+        """
+        *** It's almost the same as change-resolution ***
+        Changes the resolution of eta to NZxNX
+        Then update grid info
+        """
+        eta0, NX0, NZ0 = guess.eta, guess.NX, guess.NZ
+        if not self.NX == NX0:
+            # Change eta0 in NX dim
+            ETA = scipy.fftpack.dst(eta0, type=2, axis = 1)/(2*NX0)
+            # Increase resolution: pad with zeros
+            if self.NX > NX0:
+                ETA0 = numpy.concatenate([ETA, numpy.zeros([NZ0, self.NX-NX0])], axis= 1)
+            # Decrease resolution: drop highest coefficients
+            if self.NX < NX0:
+                ETA0 = ETA[:,:self.NX]
+            # Inverse DST-II
+            eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 1)
+
+        if not self.NZ == NZ0:
+            #Change eta in NZ dim
+            ETA = scipy.fftpack.dst(eta0, type=2, axis = 0)/(2*NZ0)
+            # Increase resolution: pad with zeros
+            if self.NZ > NZ0:
+                ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ-NZ0, self.NX])], axis = 0)
+            # Decrease resolution: drop highest coefficients
+            if self.NZ < NZ0:
+                ETA0 = ETA[:self.NZ, :]
+            # Inverse DST-II
+            eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 0)
+
+        self.eta = eta0
+        self.c = guess.c
+     
     def N2(self, z):
         """
         Create N2(z) function
@@ -526,44 +575,65 @@ class DJL(object):
             apedens = (A1+A2)*eta
         else:
             B1 = self.rho(z-eta)*eta
-            B2 = self.intrho(z-eta) - self.intrho(z)
+            B2 = self.intrho(z-eta) - self.intrho_of_zc
             apedens = B1 + B2
 
         return (self.g * apedens)
- 
+    
+ 	#########################################
+    #####     compute_ape_fast:     #########
     #########################################
-    #####     change_resolution:    #########
-    #########################################
-    def change_resolution(self, NX0, NZ0):
+ 	def compute_ape_fast(self, eta, z ):
         """
-        Changes the resolution of eta to NZxNX
-        Then update grid info
+        Compute total APE using symmetry to save time
         """
-        # Change eta in NX dim
-        if not NX0 == self.NX:
-            ETA = scipy.fftpack.dst(self.eta, type=2, axis = 1)/(2*self.NX)
-            # Increase resolution: pad with zeros
-            if NX0 > self.NX :
-                ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ, NX0-self.NX])], axis= 1)
-            # Decrease resolution: drop highest coefficients
-            if NX0 < self.NX:
-                ETA0 = ETA[:,:NX0]
-            # Inverse DST-II
-            self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 1)
-        self.prepareGrid(NX0, self.NZ)
+        ix=self.NX//2
+        if self.intrho is None:
+            apedens = self.rho( (z-eta)[:,:ix] )
+            for ii in range (numpy.size(self.wl)):
+                apedens -= self.wl[ii] *self.rho(z[:,:ix]-self.zl[ii]*eta[:,:ix])
+            apedens *= eta[:,:ix]
+        else:
+            apedens = self.rho( (z-eta)[:,:ix] )*eta[:,:ix]
+            apedens += self.intrho((z-eta)[:,:ix])
+            apedens -= self.intrho_of_zc[:,:ix]
 
-        #Change eta in NZ dim
-        if not NZ0 == self.NZ:
-            ETA = scipy.fftpack.dst(self.eta, type=2, axis = 0)/(2*self.NZ)
-            # Increase resolution: pad with zeros
-            if NZ0 > self.NZ:
-                ETA0 = numpy.concatenate([ETA, numpy.zeros([NZ0-self.NZ, self.NX])], axis = 0)
-            # Decrease resolution: drop highest coefficients
-            if NZ0 < self.NZ:
-                ETA0 = ETA[:NZ0, :]
-            # Inverse DST-II
-            self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 0)
-        self.prepareGrid(self.NX, NZ0)    
+        ape = 2*self.g * numpy.einsum('ij,ij->',self.wsine[:,:ix], apedens)
+        return ape
+        
+#    #########################################
+#    #####     change_resolution:    #########
+#    #########################################
+#    def change_resolution(self, NX0, NZ0):
+#        """
+#        Changes the resolution of eta to NZxNX
+#        Then update grid info
+#        """
+#        # Change eta in NX dim
+#        if not NX0 == self.NX:
+#            ETA = scipy.fftpack.dst(self.eta, type=2, axis = 1)/(2*self.NX)
+#            # Increase resolution: pad with zeros
+#            if NX0 > self.NX :
+#                ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ, NX0-self.NX])], axis= 1)
+#            # Decrease resolution: drop highest coefficients
+#            if NX0 < self.NX:
+#                ETA0 = ETA[:,:NX0]
+#            # Inverse DST-II
+#            self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 1)
+#        self.prepareGrid(NX0, self.NZ)
+#
+#        #Change eta in NZ dim
+#        if not NZ0 == self.NZ:
+#            ETA = scipy.fftpack.dst(self.eta, type=2, axis = 0)/(2*self.NZ)
+#            # Increase resolution: pad with zeros
+#            if NZ0 > self.NZ:
+#                ETA0 = numpy.concatenate([ETA, numpy.zeros([NZ0-self.NZ, self.NX])], axis = 0)
+#            # Decrease resolution: drop highest coefficients
+#            if NZ0 < self.NZ:
+#                ETA0 = ETA[:NZ0, :]
+#            # Inverse DST-II
+#            self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 0)
+#        self.prepareGrid(self.NX, NZ0)    
 
     #########################################
     #######       gradient:         #########
@@ -610,22 +680,14 @@ class DJL(object):
     #########################################
     #######     refine_solution:    #########
     #########################################
-    def refine_solution(self ,epsilon = 1e-4, relax = 0.5):
+    def refine_solution(self):
         """
         Iterates eta to convergence following the procedure described
         in Stastna and Lamb, 2002 (SL2002) and also in Dunphy, Subich 
         and Stastna 2011 (DSS2011).
         """
-        #Get initial guess from WNL theory if needed
-        if self.eta is None:
-            print ("well, eta ISNOT defined after all!")
-            self.initial_guess()
-        else:
-            print ("sure, eta is defined.")
-        
-        #Check for nonzero velocity profile, save time below if it's zero
-      
-        flag = True; iteration = 0;
+        flag = True
+        iteration = 0
         while flag: 
             # Iteration shift
             iteration = iteration + 1
@@ -658,12 +720,16 @@ class DJL(object):
 
             # Find the APE (DSS2011 Eq 21 & 22)
             t0 = time.time()
-            self.apedens = self.compute_apedens(eta0, self.ZC)
-            F = numpy.sum(self.wsine[:]* self.apedens[:])
-
+            #self.apedens = self.compute_apedens(eta0, self.ZC)
+            #F = numpy.sum(self.wsine[:]* self.apedens[:])
+			F = self.compute_ape_fast(eta0, self.ZC)
+			
             #Compute S1, S2 (components of DSS2011 Eq 20)
-            S1 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* nu[:])
-            S2 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* eta0[:])
+            #S1 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* nu[:])
+            #S2 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* eta0[:])
+			S1 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,nu)
+            S2 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,eta0)
+
             t1 = time.time()
             t_int = t1 - t0
             
@@ -683,13 +749,14 @@ class DJL(object):
             self.eta = (la/la0)*nu                           # (DSS2011 Eq 23)
         
             # Apply underrelaxation factor
-            self.eta = (1-relax)*eta0 + relax*self.eta
+            self.eta = eta0 + self.relax*(self.eta - eta0)
 
             # Find wave amplitude
             self.wave_ampl = self.eta.flat[numpy.abs(self.eta).argmax()]
             
             # Compute relative difference between present and previous iteration
-            reldiff = numpy.max ( numpy.abs(self.eta - eta0)) / numpy.abs(self.wave_ampl)
+            #reldiff = numpy.max ( numpy.abs(self.eta - eta0)) / numpy.abs(self.wave_ampl)
+			reldiff = numpy.abs(self.eta - eta0).max() / numpy.abs(wave_ampl)
         
         #    % Report on state of the operation
         #    if (verbose >=1)
@@ -702,7 +769,7 @@ class DJL(object):
             # Stop conditions
 #            if iteration == 3: 
 #                flag = False
-            if (iteration >= self.min_iteration) and (reldiff < epsilon):
+            if (iteration >= self.min_iteration) and (reldiff < self.epsilon):
                 flag = False
             if (iteration >= self.max_iteration):
                 flag = False
