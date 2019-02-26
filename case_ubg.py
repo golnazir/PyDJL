@@ -9,23 +9,18 @@ import numpy
 from DJL import DJL,Diagnostic, plot
 
 # Specify the parameters of the problem 
-A  = 1e-4   # APE for wave (m^4/s^2)
-L  = 8.0    # domain width (m)
-H  = 0.2    # domain depth (m)
-NX = 32     # grid
-NZ = 32     # grid
+A  = 1e-4           # APE for wave (m^4/s^2)
+L , H  = 8.0, 0.2   # domain width (m), and depth(m)
+NX, NZ = 32 , 32    # grid
 
 # The unitless density profile (normalized by a reference density rho0)
-a_d = 0.02
-z0_d= 0.05
-d_d = 0.01
+a_d, z0_d, d_d= 0.02, 0.05, 0.01
 rho    = lambda z: 1-a_d*numpy.tanh((z+z0_d)/d_d)
 intrho = lambda z: z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
 rhoz   = lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
 
 # Specify general velocity profile that takes U0 as a second parameter (m/s)
-zj    = 0.5*H
-dj    = 0.4*H
+zj, dj= 0.5*H, 0.4*H
 fUbg  = lambda z,U0: U0*numpy.tanh((z+zj)/dj)
 fUbgz = lambda z,U0: (U0/dj)*(1.0/numpy.cosh((z+zj)/dj)**2)
 fUbgzz= lambda z,U0: (-2*U0/(dj*dj))*(1.0/numpy.cosh((z+zj)/dj)**2)*numpy.tanh((z+zj)/dj)
@@ -45,15 +40,15 @@ for U0 in numpy.linspace(0, 0.1, 6):
     
     # Find the solution of the DJL equation
     # Use a reduced epsilon for these intermediate waves
-    djl.refine_solution(epsilon = 1e-3)
+    djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, epsilon = 1e-3, initial_guess = djl)
  
 # Increase the resolution, reduce epsilon, iterate to convergence
-djl.change_resolution(64,64)    #NX=64; NZ=64;
-djl.refine_solution(epsilon = 1e-6)
+NX, NZ = 64, 64
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, epsilon =  1e-6, initial_guess = djl)
 
 # Increase the resolution and iterate to convergence
-djl.change_resolution(512, 256)     #NX=512; NZ=256;
-djl.refine_solution()
+NX, NZ = 512, 256
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, epsilon =  1e-6, initial_guess = djl)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n' %(end_time - start_time))

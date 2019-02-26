@@ -583,7 +583,7 @@ class DJL(object):
  	#########################################
     #####     compute_ape_fast:     #########
     #########################################
- 	def compute_ape_fast(self, eta, z ):
+    def compute_ape_fast(self, eta, z ) :
         """
         Compute total APE using symmetry to save time
         """
@@ -722,12 +722,12 @@ class DJL(object):
             t0 = time.time()
             #self.apedens = self.compute_apedens(eta0, self.ZC)
             #F = numpy.sum(self.wsine[:]* self.apedens[:])
-			F = self.compute_ape_fast(eta0, self.ZC)
+            F = self.compute_ape_fast(eta0, self.ZC)
 			
             #Compute S1, S2 (components of DSS2011 Eq 20)
             #S1 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* nu[:])
             #S2 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* eta0[:])
-			S1 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,nu)
+            S1 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,nu)
             S2 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,eta0)
 
             t1 = time.time()
@@ -756,7 +756,7 @@ class DJL(object):
             
             # Compute relative difference between present and previous iteration
             #reldiff = numpy.max ( numpy.abs(self.eta - eta0)) / numpy.abs(self.wave_ampl)
-			reldiff = numpy.abs(self.eta - eta0).max() / numpy.abs(wave_ampl)
+            reldiff = numpy.abs(self.eta - eta0).max() / numpy.abs(self.wave_ampl)
         
         #    % Report on state of the operation
         #    if (verbose >=1)
