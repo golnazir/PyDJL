@@ -10,21 +10,16 @@ from DJL import DJL, Diagnostic, diffmatrix, plot
 from scipy import interpolate
 
 # Specify the parameters of the problem 
-A  = 1e-4   # APE for wave (m^4/s^2)
-L  = 8.0    # domain width (m)
-H  = 0.2    # domain depth (m)
-NX = 32     # grid
-NZ = 32     # grid
+A  = 1e-4           # APE for wave (m^4/s^2)
+L, H  = 8.0, 0.2    # domain width (m) and depth (m)
+NX, NZ = 32, 32     # grid
 
 # Specify analytic density and velocity profiles
-a_d  = 0.02
-z0_d = 0.05
-d_d  = 0.01
+a_d, z0_d, d_d = 0.02, 0.05, 0.01
 frho = lambda z: 1-a_d * (numpy.tanh((z+z0_d)/d_d))
 
 U0  = 0.10
-zj  = 0.5 * H
-dj  = 0.4 * H
+zj, dj  = 0.5 * H, 0.4 * H
 fUbg= lambda z: U0 * numpy.tanh((z+zj)/dj)
 
 # Now sample the density & velocity profiles to get synthetic mooring data
@@ -52,30 +47,35 @@ Utargetzz = lambda z: interpolate.interp1d(zdata, ubgzzdata)(z)
 # Find the solution
 start_time = time.time()
 
-djl = DJL(A, L, H, NX, NZ, rho, rhoz)
+#djl = DJL(A, L, H, NX, NZ, rho, rhoz)
 
 # Now solve DJL, bringing in the background velocity incrementally
-for alpha in numpy.linspace(0,1,4):
+for ii, alpha in enumerate(numpy.linspace(0,1,4)):
     # Velocity profiles
-    djl.Ubg   = lambda z: alpha * Utarget  (z)
-    djl.Ubgz  = lambda z: alpha * Utargetz (z)
-    djl.Ubgzz = lambda z: alpha * Utargetzz(z)
-
+    Ubg   = lambda z: alpha * Utarget  (z)
+    Ubgz  = lambda z: alpha * Utargetz (z)
+    Ubgzz = lambda z: alpha * Utargetzz(z)
+    
     # Use a larger epsilon for these intermediate waves
     # Iterate the DJL solution
-    djl.refine_solution(epsilon = 1e-3)
+    if ii == 0:
+        djl = DJL(A, L, H, NX, NZ, rho, rhoz, epsilon = 1e-3, Ubg=Ubg, Ubgz = Ubgz, Ubgzz=Ubgzz)
+    else:
+        djl = DJL(A, L, H, NX, NZ, rho, rhoz, epsilon = 1e-3, Ubg=Ubg, Ubgz = Ubgz, Ubgzz=Ubgzz, initial_guess=djl)
+
 
 # Increase resolution, restore default epsilon, iterate to convergence
-djl.change_resolution(64, 64)   # NX=64; NZ=64; 
-djl.refine_solution()         # clear epsilon
+NX, NZ =64, 64
+ # clear epsilon
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, Ubg=Ubg, Ubgz = Ubgz, Ubgzz=Ubgzz, initial_guess = djl)
 
 # Increase resolution, iterate to convergence
-djl.change_resolution(128, 128)     # NX=128; NZ=128;
-djl.refine_solution()
+NX, NZ =128, 128
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, Ubg=Ubg, Ubgz = Ubgz, Ubgzz=Ubgzz, initial_guess = djl)
 
 # Increase to the final resolution, iterate to convergence
-djl.change_resolution(512, 256) # NX=512; NZ=256
-djl.refine_solution()
+NX, NZ = 512,256
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, Ubg=Ubg, Ubgz = Ubgz, Ubgzz=Ubgzz, initial_guess = djl)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'% (end_time - start_time))

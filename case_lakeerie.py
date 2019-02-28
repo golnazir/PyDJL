@@ -7,8 +7,7 @@ Created on Sun Feb  3 21:22:54 2019
 import time
 import numpy
 from scipy import interpolate
-from DJL import DJL
-from DJL import Diagnostic
+from DJL import DJL,Diagnostic, plot
 
 # Specify the parameters of the problem 
 # Load sample data file: two columns, depth and temperature
@@ -24,11 +23,9 @@ T0   = 10
 alpha= 1.7e-4
 rhodata = rho0*(1 -alpha*(T-T0))
 
-A  = 5000   # APE for wave (kg m/s^2)
-L  = 600    # domain width (m)
-H  = 16.5   # domain depth (m)
-NX = 64     # grid
-NZ = 32     # grid
+A  = 5000             # APE for wave (kg m/s^2)
+L , H  = 600, 16.5    # domain width (m) and depth (m)
+NX, NZ = 64 , 32      # grid
 
 #verbose=1;
 #
@@ -44,20 +41,19 @@ rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
 
 # Find the solution
 start_time = time.time()
-djl =DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0)
-djl.refine_solution()
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0)
 
 # Increase resolution, iterate to convergence
-djl.change_resolution(128, 128)     # NX=128; NZ=128;
-djl.refine_solution()
+NX, NZ =128, 128
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, initial_guess = djl)
 
 # Increase to the final resolution, iterate to convergence
-djl.change_resolution( 512, 512)    #NX=512; NZ=512;
-djl.refine_solution()
+NX, NZ =512, 512
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, initial_guess = djl)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time- start_time))
 
 # Compute and plot the diagnostics
 diag = Diagnostic(djl)
-#djl.plot()
+plot(djl, diag, 2)
