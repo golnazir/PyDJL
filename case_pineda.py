@@ -17,9 +17,9 @@ data = numpy.genfromtxt('case_pineda_cast1.txt', delimiter=',')
 zdata = data[:, 0]
 rhodata = data [:, 1]
 
-rho0 = numpy.max (rhodata)  #Used in djles_common to compute N2(z)
+rho0 = numpy.max (rhodata)  #Used in DJL module to compute N2(z)
 
-# Use MATLAB's gradient function to find the derivative drho/dz
+# Use numpy's gradient function to find the derivative drho/dz
 rhozdata = numpy.gradient(rhodata,zdata)
 
 # Now build piecewise interpolating polynomials from the data,
@@ -30,8 +30,7 @@ rhozdata = numpy.gradient(rhodata,zdata)
 rho  = lambda z: interpolate.interp1d(zdata, rhodata )(z)
 rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
 
-L  =   1200   # domain width (m)
-H  =     57   # domain depth (m), estimated from Pineda et al's Figure 9 (a)
+L, H = 1200, 57   # domain width (m) and depth(m), estimated from Pineda et al's Figure 9 (a)
 
 ############################################################################
 #### Find the wave showcased in Pineda et al. (2015) Figure 11 #############
@@ -39,31 +38,27 @@ H  =     57   # domain depth (m), estimated from Pineda et al's Figure 9 (a)
 start_time = time.time()
 
 # Set initial resolution and large epsilon for intermediate waves
-NX = 32
-NZ = 32 
-
-A = 1e4
-djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0)
-djl.refine_solution(epsilon = 1e-3)
+NX, NZ = 32, 32
 
 # Raise amplitude in a few increments
-for i in numpy.linspace(8.04e4, 3.62e5, 5):   # APE (kg m/s^2)
-    djl.A = i
-    djl.refine_solution(epsilon = 1e-3)
-
+for ii, A in enumerate(numpy.linspace(1e4, 3.62e5, 6)):     # APE (kg m/s^2)
+    if ii == 0:
+        djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-3)
+    else:
+        djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-3, initial_guess = djl)
 
 # Increase resolution, reduce epsilon, iterate to convergence
-djl.change_resolution(64, 64)    # NX=64 NZ=64
-djl.refine_solution(epsilon=1e-4)
+NX, NZ = 64, 64
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-4, initial_guess = djl)
 
-djl.change_resolution(128, 128)     #NX=128; NZ=128; 
-djl.refine_solution(epsilon=1e-5)
+NX, NZ = 128, 128
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-5, initial_guess = djl)
 
-djl.change_resolution(256, 256)     #NX=256; NZ=256; 
-djl.refine_solution(epsilon = 1e-6)
+NX, NZ = 256, 256
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-6, initial_guess = djl)
 
-djl.change_resolution(512, 512)     #NX=512; NZ=512; 
-djl.refine_solution(epsilon = 1e-7)
+NX, NZ = 512, 512
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-7, initial_guess = djl) 
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time-start_time))
@@ -114,67 +109,35 @@ Crec  = numpy.zeros(len(Alist))    # wave phase speed
 Urec  = numpy.zeros(len(Alist))    # velocity at 1 metre above bottom
 Prec  = numpy.zeros(len(Alist))    # pressure at 1 metre above bottom
 
-# Solve the wave at each amplitude in Alist
-# Each wave is re-used as initial guess for subsequent waves
+for ai, A in enumerate (Alist):
+     # Change resolution, reduce epsilon, iterate to convergence
+    if ai == 0:
+        NX, NZ = 32, 32
+        djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-3)
+    else:
+        NX, NZ = 32, 32
+        djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-3, initial_guess = djl)
 
-# First case is done individually to create DJL object.
-A = Alist[0]
-NX = 32
-NZ = 32
-djl2 = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0)
-
-djl2.refine_solution(epsilon = 1e-3)
-
-djl2.change_resolution(64, 64)      # NX=64; NZ=64
-djl2.refine_solution(epsilon=1e-4)
-
-djl2.change_resolution(128, 128)    # NX=128; NZ=128
-djl2.refine_solution(epsilon=1e-5)
-
-# Compute and record quantities
-diag2 = Diagnostic(djl2)
-diag2.pressure(djl2)
-
-WArec[0] = djl2.wave_ampl
-Crec[0]  = djl2.c
-
-f1 = interpolate.interp2d(djl2.XC,djl2.ZC,diag2.u)
-u1mab = f1(djl2.xc,-djl2.H+1)
-val = u1mab.flat[numpy.abs(u1mab).argmax()]
-Urec[0] = val
-
-f2 = interpolate.interp2d(djl2.XC,djl2.ZC, diag2.p)
-p1mab = f2(djl2.xc,-djl2.H+1);
-val = p1mab.flat[numpy.abs(p1mab).argmax()]
-Prec[0] = val
-
-for ai in range (1,len(Alist)):
-    djl2.A = Alist[ai]
-
-    # Change resolution, reduce epsilon, iterate to convergence
-    djl2.change_resolution(32, 32)      # NX=32; NZ=32;
-    djl2.refine_solution(epsilon=1e-3)
-     
-    djl2.change_resolution(64, 64)      # NX=64; NZ=64
-    djl2.refine_solution(epsilon=1e-4)
-
-    djl2.change_resolution(128, 128)    # NX=128; NZ=128
-    djl2.refine_solution(epsilon=1e-5)
-
+    NX, NZ = 64, 64
+    djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-4, initial_guess = djl) 
+    
+    NX, NZ = 128,128
+    djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-5, initial_guess = djl)
+    
     # Compute and record quantities
-    diag3 = Diagnostic(djl2)
-    diag3.pressure(djl2)
+    diag = Diagnostic(djl)
+    diag.pressure(djl)
 
-    WArec[ai] = djl2.wave_ampl
-    Crec[ai] = djl2.c
+    WArec[ai] = djl.wave_ampl
+    Crec[ai] = djl.c
 
-    f1 = interpolate.interp2d(djl2.XC, djl2.ZC, diag3.u)
-    u1mab = f1(djl2.xc,-djl2.H+1)
+    f1 = interpolate.interp2d(djl.XC, djl.ZC, diag.u)
+    u1mab = f1(djl.xc,-djl.H+1)
     val = u1mab.flat[numpy.abs(u1mab).argmax()]
     Urec[ai] = val
     
-    f2 = interpolate.interp2d(djl2.XC, djl2.ZC, diag3.p)
-    p1mab = f2(djl2.xc,-djl2.H+1);
+    f2 = interpolate.interp2d(djl.XC, djl.ZC, diag.p)
+    p1mab = f2(djl.xc,-djl.H+1);
     val = p1mab.flat[numpy.abs(p1mab).argmax()]
     Prec[ai] = val
     
