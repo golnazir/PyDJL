@@ -58,7 +58,7 @@ rhoz   = lambda z: interpolate.interp1d(zdata,rhozdata,fill_value="extrapolate")
 fUbg   = lambda z: interpolate.interp1d(zdata,udata   ,fill_value="extrapolate")(z)
 fUbgz  = lambda z: interpolate.interp1d(zdata,uzdata  ,fill_value="extrapolate")(z)
 fUbgzz = lambda z: interpolate.interp1d(zdata,uzzdata ,fill_value="extrapolate")(z)
-breakpoint()
+
 # Now we have data, prepare for DJLES
 L, H = 600, 80   # domain width (m) and depth (m)
 rho0 = 1000      # reference density (kg/m^3)
