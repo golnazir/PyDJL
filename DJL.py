@@ -8,18 +8,6 @@ import scipy.sparse.linalg
 import scipy.fftpack
 import time
 
-#import scipy.io as sio  # TO DO: DELETE THIS LINE
-#import inspect
-#
-#def cmp(v):
-#    m = sio.loadmat("C:\\Users\\GolnazIR\\matlabToPythonPrj\\DJLES\\var.mat")
-#    v1 = m[v]
-#    ccc = inspect.currentframe().f_back.f_locals.items()
-#    for ke,v2 in ccc:
-#        if ke==v:
-#            break
-#    e = numpy.max(numpy.abs(v1-v2))
-#    print('{} error: {}'.format(v,e))
     
 class Diagnostic(object):
     """
@@ -275,6 +263,7 @@ class DJL(object):
                  intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None,
                  relax=0.5, epsilon=1e-4,
                  initial_guess=None,
+                 verbose = 1,
                  ):
         """
         Constructor
@@ -313,7 +302,7 @@ class DJL(object):
 
         # Verbose flag. If >=1, we display a report on solving progress
         # If >=2, display a timing report
-#        self.verbose = 1
+        self.verbose = verbose
 
         # Convergence criteria: Stop iterating when the relative difference between
         # successive iterations differs by less than epsilon
@@ -520,7 +509,9 @@ class DJL(object):
         bot = numpy.sum((clw-uvec)*E1p2)
         r10 = (-0.75/clw)*numpy.sum((clw-uvec)*(clw-uvec)*E1p3)/bot
         r01 = -0.5*sum((clw-uvec)*(clw-uvec)*E1*E1)/bot
-
+        if (self.verbose == 1):
+            print('WNL gives: c_lw = %f, r10 = %f, r01 = %f\n\n' %( clw, r10, r01))
+        
         #Now optimise the b0, lambda parameters
         tmpE1 = numpy.asmatrix(E1).transpose()
         E = numpy.matlib.repmat(tmpE1, 1, self.NX)
@@ -529,6 +520,8 @@ class DJL(object):
         b0 = numpy.sign(r10)*0.05*self.H  #Start b0 as 5% of domain height
         la = numpy.sqrt( -6*r01 / (clw * r10 * b0) )
         c = (1 + (2/3) * r10 * b0)*clw
+        if (self.verbose ):
+            print('init b0 = %f, lambda = %f, V = %f\n' %( b0, la, c))
         
         flag = 1
         while flag > 0 :
@@ -552,7 +545,11 @@ class DJL(object):
             la = numpy.sqrt( -6 * r01 / (clw * r10 * b0) )
             if not numpy.isreal(la):
                 print('!problem finding new lambda-la !!')
-                
+            
+            if (self.verbose >= 1 ):
+                print('F=%e, desired = %e, rescaling b0 by factor of %f...\n'%(F,self.A,afact))
+                print('new b0 = %f, lambda = %f, V = %f\n\n' % (b0,la,c))
+               
             #Stop conditions: the wave gets too big, or we get matching APE
             if numpy.abs(b0) > 0.75*self.H or numpy.abs(afact-1) < 0.01 :
                 eta = eta0
@@ -686,6 +683,13 @@ class DJL(object):
         in Stastna and Lamb, 2002 (SL2002) and also in Dunphy, Subich 
         and Stastna 2011 (DSS2011).
         """
+        # Initialise t for recording timing data
+        t_start = time.time()
+        t_solve, t_int = 0, 0
+        if (self.verbose >= 1):
+            wave_ampl = self.eta.flat[numpy.abs(self.eta).argmax()]
+            print('Initial guess:\n wave ampl = %+.10e,   c = %+.10e\n\n'%(wave_ampl,self.c))
+        
         flag = True
         iteration = 0
         while flag: 
@@ -720,13 +724,9 @@ class DJL(object):
 
             # Find the APE (DSS2011 Eq 21 & 22)
             t0 = time.time()
-            #self.apedens = self.compute_apedens(eta0, self.ZC)
-            #F = numpy.sum(self.wsine[:]* self.apedens[:])
             F = self.compute_ape_fast(eta0, self.ZC)
 			
             #Compute S1, S2 (components of DSS2011 Eq 20)
-            #S1 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* nu[:])
-            #S2 = self.g * self.H * self.rho0 * numpy.sum( self.wsine[:]* S[:]* eta0[:])
             S1 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,nu)
             S2 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,eta0)
 
@@ -758,33 +758,29 @@ class DJL(object):
             #reldiff = numpy.max ( numpy.abs(self.eta - eta0)) / numpy.abs(self.wave_ampl)
             reldiff = numpy.abs(self.eta - eta0).max() / numpy.abs(self.wave_ampl)
         
-        #    % Report on state of the operation
-        #    if (verbose >=1)
-        #        fprintf('Iteration %4d:\n',iteration);
-        #        fprintf(' A       = %+.10e, wave ampl = %+16.10f m\n',A,wave_ampl);
-        #        fprintf(' F       = %+.10e, c         = %+16.10f m/s\n',F,c);
-        #        fprintf(' reldiff = %+.10e\n\n',reldiff);
-        #    end
-        #
-            # Stop conditions
-#            if iteration == 3: 
-#                flag = False
+            # Report on state of the operation
+            if (self.verbose >=1):
+                print('Iteration %4d:\n' %(iteration))
+                print(' A       = %+.10e, wave ampl = %+16.10f m\n'  % (self.A, self.wave_ampl))
+                print(' F       = %+.10e, c         = %+16.10f m/s\n'% ( F,self.c))
+                print(' reldiff = %+.10e\n\n'% (reldiff))
+        
             if (iteration >= self.min_iteration) and (reldiff < self.epsilon):
                 flag = False
             if (iteration >= self.max_iteration):
                 flag = False
                 print("Reached maximum number of iterations (%d >= %d)\n" %(iteration,self.max_iteration))
            
-        #
-        #t.stop = clock; t.total = etime(t.stop, t.start);
-        #% Report the timing data
-        #if (verbose >= 2)
-        #    fprintf('Poisson solve time: %6.2f seconds\n', t.solve);
-        #    fprintf('Integration time:   %6.2f seconds\n', t.int);
-        #    fprintf('Other time:         %6.2f seconds\n', t.total - t.solve - t.int);
-        #    fprintf('Total:              %6.2f seconds\n', t.total);
-        #end
-        #
+        t_stop = time.time()
+        t_total = t_stop - t_start
+        # Report the timing data
+        if (self.verbose >= 2):
+            print('Poisson solve time: %6.2f seconds\n' % (t_solve))
+            print('Integration time:   %6.2f seconds\n' % (t_int))
+            print('Other time:         %6.2f seconds\n' % (t_total - t_solve - t_int))
+            print('Total:              %6.2f seconds\n' % (t_total))
+        
+        
 
         print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, self.wave_ampl))
     

@@ -121,9 +121,9 @@ for ai, A in enumerate (Alist):
     NX, NZ = 64, 64
     djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-4, initial_guess = djl) 
     
-    NX, NZ = 128,128
-    djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-5, initial_guess = djl)
-    
+#    NX, NZ = 128,128
+#    djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-5, initial_guess = djl)
+#    
     # Compute and record quantities
     diag = Diagnostic(djl)
     diag.pressure(djl)
@@ -144,7 +144,7 @@ for ai, A in enumerate (Alist):
     
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time - start_time))
-
+breakpoint()
 # Construct Pineda et al. (2015) Figure 10
 plt.clf()
 plt.figure(10)
