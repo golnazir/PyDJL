@@ -16,6 +16,9 @@ Ri, and vorticity.
 
 * **diffmatrix function**: This function used both in DJL class and case files. It construct a centered differentiation matrix with up/down wind at the ends
 
+There are 8 case files that can be run to be solved using DJL equation. Each case is explained in pdf provided Under Reference section. 
+After the case file completes, the wave is plotted.
+
 # Requirment
 python 3 interpreter
 
