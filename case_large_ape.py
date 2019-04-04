@@ -44,4 +44,12 @@ print('Total wall clock time: %f seconds\n'% (end_time - start_time));
 diag = Diagnostic(djl)
 plot(djl, diag, 2)
 
+
+#Figure for README
+import matplotlib.pyplot as plt
+fig = plt.gcf()
+fig.set_size_inches(9,10)
+plt.tight_layout(pad=2, w_pad=3)
+plt.savefig('case_large_ape.png')
+
 input("Press Enter to continue...")
