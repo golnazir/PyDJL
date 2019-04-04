@@ -169,3 +169,5 @@ plt.title('P at 1 mab (Pa)')
 plt.tight_layout()
 plt.ion()
 plt.show()
+
+input("Press Enter to continue...")

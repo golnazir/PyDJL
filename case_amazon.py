@@ -107,3 +107,5 @@ plot(djl, diag, 2)
 # to a broad flat crested wave. Use a larger domain for larger vales of APE.
 end_time = time.time()
 print ('Total wall clock time: %f seconds\n'%(end_time - start_time))
+
+input("Press Enter to continue...")

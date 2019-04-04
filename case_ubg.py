@@ -56,3 +56,5 @@ print('Total wall clock time: %f seconds\n' %(end_time - start_time))
 # Compute and plot the diagnostics
 diag = Diagnostic(djl)
 plot(djl, diag, 2)
+
+input("Press Enter to continue...")
