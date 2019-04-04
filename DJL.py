@@ -1,4 +1,4 @@
-#DJL Class
+#DJL Module
 
 import numpy
 import numpy.matlib
@@ -263,7 +263,7 @@ class DJL(object):
                  intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None,
                  relax=0.5, epsilon=1e-4,
                  initial_guess=None,
-                 verbose = 1,
+                 verbose = 0,
                  ):
         """
         Constructor
@@ -598,40 +598,6 @@ class DJL(object):
         ape = 2*self.g * numpy.einsum('ij,ij->',self.wsine[:,:ix], apedens)
         return ape
         
-#    #########################################
-#    #####     change_resolution:    #########
-#    #########################################
-#    def change_resolution(self, NX0, NZ0):
-#        """
-#        Changes the resolution of eta to NZxNX
-#        Then update grid info
-#        """
-#        # Change eta in NX dim
-#        if not NX0 == self.NX:
-#            ETA = scipy.fftpack.dst(self.eta, type=2, axis = 1)/(2*self.NX)
-#            # Increase resolution: pad with zeros
-#            if NX0 > self.NX :
-#                ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ, NX0-self.NX])], axis= 1)
-#            # Decrease resolution: drop highest coefficients
-#            if NX0 < self.NX:
-#                ETA0 = ETA[:,:NX0]
-#            # Inverse DST-II
-#            self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 1)
-#        self.prepareGrid(NX0, self.NZ)
-#
-#        #Change eta in NZ dim
-#        if not NZ0 == self.NZ:
-#            ETA = scipy.fftpack.dst(self.eta, type=2, axis = 0)/(2*self.NZ)
-#            # Increase resolution: pad with zeros
-#            if NZ0 > self.NZ:
-#                ETA0 = numpy.concatenate([ETA, numpy.zeros([NZ0-self.NZ, self.NX])], axis = 0)
-#            # Decrease resolution: drop highest coefficients
-#            if NZ0 < self.NZ:
-#                ETA0 = ETA[:NZ0, :]
-#            # Inverse DST-II
-#            self.eta = scipy.fftpack.idst(ETA0,type=2, axis = 0)
-#        self.prepareGrid(self.NX, NZ0)    
-
     #########################################
     #######       gradient:         #########
     #########################################

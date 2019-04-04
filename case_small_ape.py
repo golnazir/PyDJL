@@ -20,14 +20,9 @@ start_time = time.time()
 #  Create DJL object
 djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho = intrho)
 
-## Find the solution of the DJL equation
-#djl.refine_solution()
-
 # Increase the resolution, and iterate to convergence
 NX, NZ = 512, 512
 djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho = intrho, epsilon=1e-6, initial_guess=djl)
-#djl.change_resolution(512, 512)
-#djl.refine_solution( epsilon=1e-6)
 
 end_time = time.time()
 
