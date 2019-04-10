@@ -20,12 +20,15 @@ There are 8 case files that can be run to be solved using DJL equation. Each cas
 After the case file completes, the wave is plotted.
 
 # Requirment
-python 3 interpreter
+Python 3.7, scipy, numpy, matplotlib.
 
 # How to use?
-Download the code and run one of the case files. User can set the value for different variables as well as verbose variable. Verbose enables a user
-to print more information while the program is running.
-By default the verbose is set to 0 and limited information is printed as program is running. 
+Download the code and run a case file, such as:
+```
+  python case_large_ape.py
+```
+and you should get a figure like this:
+https://raw.githubusercontent.com/golnazir/PyDJL/master/case_large_ape.png
 
 # Reference
-To see user guid from original project please see: https://www.math.uwaterloo.ca/~mdunphy/djles.pdf
+For more detail, see the user guide from the DJLES project: https://www.math.uwaterloo.ca/~mdunphy/djles.pdf
