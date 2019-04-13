@@ -1,4 +1,4 @@
-#DJL Module
+#PyDJL Module
 
 import numpy
 import numpy.matlib

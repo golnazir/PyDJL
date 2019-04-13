@@ -6,7 +6,7 @@ Created on Thu Jan 31 10:45:26 2019
 """
 import time
 import numpy
-from DJL import DJL, Diagnostic, plot
+from PyDJL import DJL, Diagnostic, plot
 
 # Specify the parameters of the problem 
 A  = 5e-5          # APE for wave (m^4/s^2)

@@ -7,7 +7,7 @@ Created on Sun Feb  3 21:22:54 2019
 import time
 import numpy
 from scipy import interpolate
-from DJL import DJL,Diagnostic, plot
+from PyDJL import DJL,Diagnostic, plot
 
 # Specify the parameters of the problem 
 # Load sample data file: two columns, depth and temperature

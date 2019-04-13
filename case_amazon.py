@@ -7,7 +7,7 @@ Created on Tue Feb  20 21:03:02 2019
 import time
 import numpy
 from scipy import interpolate
-from DJL import DJL, Diagnostic, plot
+from PyDJL import DJL, Diagnostic, plot
 import matplotlib.pyplot as plt
 
 # Load the Amazon data

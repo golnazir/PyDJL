@@ -6,7 +6,7 @@ Created on Sat Feb  2 16:58:38 2019
 """
 import time
 import numpy
-from DJL import DJL, Diagnostic, diffmatrix, plot
+from PyDJL import DJL, Diagnostic, diffmatrix, plot
 from scipy import interpolate
 
 # Specify the parameters of the problem 

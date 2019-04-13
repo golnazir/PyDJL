@@ -7,7 +7,7 @@ Created on Sat Feb  9 20:28:03 2019
 import time
 import numpy
 from scipy import interpolate
-from DJL import DJL, Diagnostic, plot
+from PyDJL import DJL, Diagnostic, plot
 import matplotlib.pyplot as plt
 
 # Load density data. The text file contains an approximate reproduction of
