@@ -9,19 +9,17 @@ For details on the problem background and setup, please see the user guide and r
 Python 3.7, scipy, numpy, matplotlib.
 
 # Code structure
-The core part of code is DJL module. It includes Diagnostic class, DJL class, plot function, and diffmatrix function.
-* **DJL class**: This class is the core of project. Implementing different mathematic equations to solve the Dubreil-Jacotin-Long Equation (DJLE)
+The code is organized as a single PyDJL module and a set of test cases. The module contains a DJL class, Diagnostic class, plot function, and diffmatrix function.
 
-* **Diagnostic class**: This class use the DJL object, calculating more parameters such as density, vorticity, residual.
+* **DJL class**: This class is the core of project, which implements and stores the iterative procedure to solve the Dubreil-Jacotin-Long (DJL) equation.
 
-* **plot function**: This function is called from case files after the equation has been solved and plot different variables for user.
-User can pass plottype 1 or 2. Plottype 1 only plot eta and density, while plottype 2 plots those as well as uwave, w, kewave, ape density,
-Ri, and vorticity.
+* **Diagnostic class**: This class uses a DJL object to calculate quantities such as density, vorticity, etc.
 
-* **diffmatrix function**: This function used both in DJL class and case files. It construct a centred differentiation matrix with up/down wind at the ends
+* **plot function**: This function is called from the test cases to make pseudocolour plots of the solution. User can pass plottype=1 or 2. Plottype 1 shows two panels (eta and density), while plottype 2 plots uses the results of Diagnostics to show 8 panels (eta, density, uwave, w, kewave, ape density, Richardson number, and vorticity).
 
-There are 8 case files that can be run to be solved using DJL equation. Each case is explained in pdf provided Under Reference section. 
-After the case file completes, the wave is plotted.
+* **diffmatrix function**: A helper function used both in the DJL class and in the case files. It constructs a centred differentiation matrix with up/down wind at the ends.
+
+The eight test cases demonstrate the problem set up and solution procedure. The cases are explained in more detail in the [DJLES documentation](https://www.math.uwaterloo.ca/~mdunphy/djles.pdf)
 
 
 # How to use?
