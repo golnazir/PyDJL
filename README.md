@@ -3,7 +3,7 @@ PyDJL solves an equation for a wave of permanent form travelling in a stratified
 
 PyDJL is a Python 3 translation of the MATLAB-based project [DJLES](https://github.com/mdunphy/DJLES.git). The solution method used here is the same as in DJLES, with some differences in implementation details that lead to better performance. For example, PyDJL uses sine transforms while DJLES uses Fourier transforms. The performance is 6-20x better in PyDJL.
 
-For details on the problem background and setup, please see the user guide and references from the DJLES project: https://www.math.uwaterloo.ca/~mdunphy/djles.pdf
+For details on the problem background and setup, please see the user guide and references from the DJLES project: [DJLES documentation](https://palang.ca/DJLES/djles.pdf)
 
 # Requirements
 Python 3.7, scipy, numpy, matplotlib.
