@@ -19,7 +19,7 @@ The code is organized as a single PyDJL module and a set of test cases. The modu
 
 * **diffmatrix function**: A helper function used both in the DJL class and in the case files. It constructs a centred differentiation matrix with up/down wind at the ends.
 
-The eight test cases demonstrate the problem set up and solution procedure. The cases are explained in more detail in the [DJLES documentation](https://www.math.uwaterloo.ca/~mdunphy/djles.pdf)
+The eight test cases demonstrate the problem set up and solution procedure. The cases are explained in more detail in the [DJLES documentation](https://palang.ca/DJLES/djles.pdf)
 
 
 # How to use?
