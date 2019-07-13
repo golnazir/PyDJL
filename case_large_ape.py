@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 """
 Created on Wed Jan 30 11:47:25 2019
-
+Test case: case_large_ape
 @author: GolnazIR
 """
 import time
@@ -38,18 +37,18 @@ NX, NZ = 512,256
 djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho=intrho, epsilon=1e-5, initial_guess=djl)
 
 end_time = time.time()
-print('Total wall clock time: %f seconds\n'% (end_time - start_time));
+print('Total wall clock time: %f seconds\n'% (end_time - start_time))
 
 # Compute and plot the diagnostics
 diag = Diagnostic(djl)
 plot(djl, diag, 2)
 
 
-#Figure for README
-import matplotlib.pyplot as plt
-fig = plt.gcf()
-fig.set_size_inches(9,10)
-plt.tight_layout(pad=2, w_pad=3)
-plt.savefig('case_large_ape.png')
+##### Figure for README #####
+# import matplotlib.pyplot as plt
+# fig = plt.gcf()
+# fig.set_size_inches(9,10)
+# plt.tight_layout(pad=2, w_pad=3)
+# plt.savefig('case_large_ape.png')
 
 input("Press Enter to continue...")

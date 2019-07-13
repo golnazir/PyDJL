@@ -1,9 +1,13 @@
+"""
+Test case: case_small_ape
+@author: GolnazIR
+"""
 import time
 import numpy
 from PyDJL import DJL,Diagnostic, plot
 
 # Specify the parameters of the problem
-A  = 5e-5             #APE for wave (m^4/s^2)
+A  = 5e-5            # APE for wave (m^4/s^2)
 L , H  = 4.0, 0.2    # domain width (m) and depth (m)
 NX, NZ = 32, 32      # grid
 
@@ -13,11 +17,9 @@ rho    = lambda z: 1-a_d*numpy.tanh((z+z0_d)/d_d)
 intrho = lambda z: z - a_d*d_d*numpy.log(numpy.cosh( (z+z0_d)/d_d ))
 rhoz   = lambda z: -(a_d/d_d)*(1.0/numpy.cosh((z+z0_d)/d_d)**2)
 
-################################
-################################ 
 start_time = time.time()
 
-#  Create DJL object
+# Create DJL object
 djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho = intrho)
 
 # Increase the resolution, and iterate to convergence

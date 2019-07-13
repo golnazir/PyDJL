@@ -9,6 +9,522 @@ import scipy.fftpack
 import time
 
     
+class DJL(object):
+    """
+    DJL object
+    """
+    ################################
+    #######  djles_common: #########
+    ################################
+        
+    def __init__(self, A, L, H, NX, NZ, rho, rhoz,
+                 intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None,
+                 relax=0.5, epsilon=1e-4,
+                 initial_guess=None,
+                 verbose = 0,
+                 ):
+        """
+        Constructor
+            - Store all the parameteres.
+            - Prepare the grid.
+            - If intrho exists, cache the value of intrho(ZC) to use later since it's slow to compute.
+            - Either call the initial_guess to prepare the initial eta and c or use the provided initial guess.
+            - Call refine_solution to iteratively find the solution to DJL equation.
+        """
+        self.A = A 	#APE for wave (m^4/s^2)
+        self.L = L 	#domain width (m)
+        self.H = H 	#domain depth (m)
+
+        # background density - function of z
+        self.rho = rho
+        self.rhoz = rhoz
+        self.intrho = intrho
+
+        # background velocity - func(z)
+        self.Ubg   = Ubg
+        self.Ubgz  = Ubgz
+        self.Ubgzz = Ubgzz
+
+        #  Default min and max number of iterations for the iterative procedure.
+        self.min_iteration = 10
+        self.max_iteration = 2000
+
+        # Default number of Legendre points for Gauss quadrature - use for numerical integration.
+        self.NL = 20
+
+        # Underrelaxation factor, 0 < relax <= 1
+        # Setting this can help in finding a solution and/or speeding
+        # convergence. This value is interpreted as the fraction of the new
+        # field to keep after an iteration completes, that is,
+        # val = (1-relax)*oldval + (relax)*newval
+        # Setting relax=0 prevents the iterations from proceeding, and setting
+        # relax=1 simply disables underrelaxation. The default value of 0.5 works
+        # well for most cases.
+        self.relax = relax
+
+        # Gravitational acceleration constant (m/s^2)
+        self.g = 9.81
+
+        # Verbose flag. If >=1, we display a report on solving progress
+        # If >=2, display a timing report
+        self.verbose = verbose
+
+        # Convergence criteria: Stop iterating when the relative difference between
+        # successive iterations differs by less than epsilon
+        self.epsilon = epsilon
+
+        # If rho0 is not speficied, assume we are using non-dimensional density
+        self.rho0 = rho0
+        
+        # Get Legendre points and weights for Gauss quadrature - [-1,...,1]
+        self.zl, self.wl = numpy.polynomial.legendre.leggauss(self.NL)
+        # Shift to [0, ..., 1]
+        self.zl = (self.zl+1)/2
+        self.wl = self.wl/2
+        
+        self.prepareGrid(NX, NZ)
+        
+        # Cache intrho(ZC) if we have intrho
+        if self.intrho is not None:
+            self.intrho_of_zc = self.intrho(self.ZC)
+
+        # Handle initial guess
+        if initial_guess is None:
+            # No initial guess - use weakly nonlinear theory to generate an initial guess
+            self.initial_guess()
+        else:
+            # Use provided solution as initial guess (e.i use provided eta)
+            self.import_initial_guess(initial_guess)
+
+        # Solve the wave
+        self.refine_solution()
+
+    
+    def N2(self, z):
+        """
+        Create N2(z) function
+        """
+        return (-self.g/self.rho0)*self.rhoz(z)
+    
+    def prepareGrid(self, NX, NZ):
+        """
+     	Generate the grid and wavenumbers
+     	"""
+        self.NX = NX
+        self.NZ = NZ
+        
+        # Prepare the grids: (xc,zc) are cell centred, (xe,ze) are cell edges
+        self.dx = self.L/self.NX
+        self.dz = self.H/self.NZ
+        
+        self.xc = numpy.arange(0.5, self.NX, 1)*self.dx
+        self.zc = numpy.arange(0.5, self.NZ, 1)*self.dz - self.H
+        self.XC, self.ZC = numpy.meshgrid(self.xc,self.zc)
+        
+        self.xe = numpy.arange(0, self.NX, 1)*self.dx
+        self.ze = numpy.arange(0, self.NZ, 1)*self.dz - self.H
+        self.XE, self.ZE = numpy.meshgrid(self.xe,self.ze)
+        
+        # Get 2D weights for sine rectangle quadrature
+        self.wsine = self.sinequadrature()
+
+        # DST-II wavenumbers go from 1 to NX-1 or NZ-1 (because the function is odd)
+        self.kso = (numpy.pi / self.L) * numpy.arange(1, self.NX+1)
+        self.mso = (numpy.pi / self.H) * numpy.arange(1, self.NZ+1)
+        
+        self.kse = (numpy.pi / self.L) * numpy.arange(0, self.NX)
+        self.mse = (numpy.pi / self.H) * numpy.arange(0, self.NZ)
+
+        ksm = numpy.tile(self.kso,(self.NZ ,1))
+        msm = numpy.tile(self.mso,(self.NX, 1)).transpose()
+        self.LAP = -ksm**2 - msm**2
+        self.INVLAP = 1/self.LAP
+
+        ksme = numpy.tile(self.kse,(self.NZ ,1))
+        msme = numpy.tile(self.mse,(self.NX, 1)).transpose()
+        self.LAPE = -ksme**2 - msme**2
+        self.LAPE[0,0] = 1
+        self.INVLAPE = 1/self.LAPE
+        self.INVLAPE[0,0] = 0
+
+    #########################################
+    #######     initial_guess:      #########
+    #########################################
+    def initial_guess(self):
+        """
+        Finds an initial guess for eta and c via weakly nonlinear theory
+        """
+        # Set up eigenvalue problem for vertical structure.
+        Dz   = diffmatrix(self.dz, self.NZ, 1, 'not periodic');
+        Dzz  = diffmatrix(self.dz, self.NZ, 2, 'not periodic');
+        Dzzc = Dzz[1:-1, 1:-1] # cut the endpoints for Dirichlet conditions
+
+        # Get n2, u and uzz data
+        tmpz   = self.zc[1:-1]      # column vector
+        n2vec  = self.N2(tmpz) 
+
+        # Create diagonal matrices
+        N2d  = numpy.diag(n2vec )
+        
+        if self.Ubg is None:
+            # Setup quadratic eigenvalue problem
+            B0 = sparse.csr_matrix(N2d)
+            B1 = sparse.csr_matrix((self.NZ-2, self.NZ-2))
+            B2 = sparse.csr_matrix(Dzzc)
+        else:
+            uvec   = self.Ubg(tmpz)
+            uzzvec = self.Ubgzz(tmpz)
+            
+            Ud   = numpy.diag(uvec  )
+            Uzzd = numpy.diag(uzzvec)
+            
+            # Setup quadratic eigenvalue problem
+            B0 = sparse.csr_matrix(N2d + Ud*Ud*Dzzc - Ud*Uzzd)
+            B1 = sparse.csr_matrix(-2*Ud*Dzzc + Uzzd)
+            B2 = sparse.csr_matrix(Dzzc)
+      
+        # Solve eigenvalue problem; extract first eigenvalue & eigenmode
+        Z = sparse.csr_matrix((self.NZ-2, self.NZ-2))
+        I = sparse.eye(self.NZ-2)
+        AA =sparse.bmat([[-B0, Z], [Z, I]], format = 'csr')
+        BB =sparse.bmat([[B1, B2], [I, Z]], format = 'csr' )
+        cc, V = scipy.linalg.eig(AA.todense() , BB.todense())
+        ii = numpy.argmax(cc)
+        V2 = V[:self.NZ-2, ii]
+        
+        # Largest eigenvalue is clw
+        clw = cc[ii].real
+        
+        # Add boundary conditions
+        phi = numpy.pad(V2, (1,1), 'constant')
+        if self.Ubg is None:
+            uvec = numpy.zeros(phi.shape)
+        else:
+            uvec = numpy.pad(uvec, (1,1), 'constant', constant_values = (self.Ubg(-self.H), self.Ubg(0)))
+        
+        # Compute E1, normalise
+        E1 = numpy.divide(clw*phi , clw-uvec)
+        E1 = numpy.abs(E1) / numpy.max(numpy.abs(E1))
+        
+        # Compute r10 and r01
+        E1p = numpy.matmul(Dz, E1)
+        E1p2 = E1p**2
+        E1p3 = E1p**3
+        bot = numpy.sum((clw-uvec)*E1p2)
+        r10 = (-0.75/clw)*numpy.sum((clw-uvec)*(clw-uvec)*E1p3)/bot
+        r01 = -0.5*sum((clw-uvec)*(clw-uvec)*E1*E1)/bot
+        if self.verbose >= 1:
+            print('WNL gives: c_lw = %f, r10 = %f, r01 = %f\n\n' %( clw, r10, r01))
+        
+        # Now optimise the b0, lambda parameters
+        tmpE1 = numpy.asmatrix(E1).transpose()
+        E = numpy.matlib.repmat(tmpE1, 1, self.NX)
+        E[:, 0] = 0
+        E[:,-1] = 0
+        b0 = numpy.sign(r10)*0.05*self.H  # Start b0 as 5% of domain height
+        la = numpy.sqrt( -6*r01 / (clw * r10 * b0) )
+        c = (1 + (2/3) * r10 * b0)*clw
+        if self.verbose >= 1:
+            print('init b0 = %f, lambda = %f, V = %f\n' %( b0, la, c))
+        
+        flag = 1
+        while flag > 0 :
+            flag = flag + 1
+            eta0 = -b0 * numpy.asarray(E) * (1.0/numpy.cosh((self.XC - self.L/2) / la))**2
+            eta0[0, :] = 0
+            eta0[:, 0] = 0
+            eta0[:,-1] = 0
+            eta0[-1,:] = 0
+            
+            # Find the APE (DSS2011 Eq 21 & 22)
+            self.apedens = self.compute_apedens(eta0, self.ZC)
+            F = numpy.sum(self.wsine * self.apedens)
+
+            # New b0 by rescaling
+            afact = numpy.max([numpy.min([self.A/F , 1.05]), 0.95])
+            b0 = b0 * afact
+            
+            # New c, lambda
+            c = (1 + (2/3) * r10 * b0) * clw
+            la = numpy.sqrt( -6 * r01 / (clw * r10 * b0) )
+            if not numpy.isreal(la):
+                print('!problem finding new lambda-la !!')
+            
+            if self.verbose >= 1 :
+                print('F=%e, desired = %e, rescaling b0 by factor of %f...\n'%(F,self.A,afact))
+                print('new b0 = %f, lambda = %f, V = %f\n\n' % (b0,la,c))
+               
+            # Stop conditions: the wave gets too big, or we get matching APE
+            if numpy.abs(b0) > 0.75*self.H or numpy.abs(afact-1) < 0.01 :
+                eta = eta0
+                flag= 0
+                
+        self.eta = eta
+        self.c = c
+    
+    #########################################
+    #######   import_initial_guess:    ######
+    #########################################
+    def import_initial_guess(self, guess):
+        """
+        Using provided solution as initial guess to solve the current problem.  
+        """
+        eta0, NX0, NZ0 = guess.eta, guess.NX, guess.NZ
+        if not self.NX == NX0:
+            # Change the resolution in x-dimension using sine transform approach
+            ETA = scipy.fftpack.dst(eta0, type=2, axis = 1)/(2*NX0)
+            # Increase resolution: pad with zeros
+            if self.NX > NX0:
+                ETA0 = numpy.concatenate([ETA, numpy.zeros([NZ0, self.NX-NX0])], axis= 1)
+            # Decrease resolution: drop highest coefficients
+            if self.NX < NX0:
+                ETA0 = ETA[:,:self.NX]
+            # Inverse DST-II
+            eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 1)
+
+        if not self.NZ == NZ0:
+            # Change the resolution in z-dimension using sine transform approach
+            ETA = scipy.fftpack.dst(eta0, type=2, axis = 0)/(2*NZ0)
+            # Increase resolution: pad with zeros
+            if self.NZ > NZ0:
+                ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ-NZ0, self.NX])], axis = 0)
+            # Decrease resolution: drop highest coefficients
+            if self.NZ < NZ0:
+                ETA0 = ETA[:self.NZ, :]
+            # Inverse DST-II
+            eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 0)
+
+        self.eta = eta0
+        self.c = guess.c
+     
+
+    #########################################
+    #######     refine_solution:    #########
+    #########################################
+    def refine_solution(self):
+        """
+        Iterates eta to convergence following the procedure described
+        in Stastna and Lamb, 2002 (SL2002) and also in Dunphy, Subich 
+        and Stastna 2011 (DSS2011).
+        """
+        # Initialise t for recording timing data
+        t_start = time.time()
+        t_solve, t_int = 0, 0
+        if (self.verbose >= 1):
+            wave_ampl = self.eta.flat[numpy.abs(self.eta).argmax()]
+            print('Initial guess:\n wave ampl = %+.10e,   c = %+.10e\n\n'%(wave_ampl,self.c))
+        
+        flag = True
+        iteration = 0
+        while flag: 
+            # Iteration shift
+            iteration = iteration + 1
+            eta0 = self.eta
+            c0   = self.c
+            la0  = self.g * self.H / (self.c * self.c)
+            # Compute S (DSS2011 Eq 19)
+            S = self.N2(self.ZC - eta0) * eta0/(self.g*self.H)
+
+            # Compute R, assemble RHS
+            if self.Ubg is not None:
+                eta0x, eta0z = self.gradient(eta0, 'odd', 'odd')
+                uhat  = self.Ubg (self.ZC - eta0)/c0
+                uhatz = self.Ubgz(self.ZC - eta0)/c0
+                R = (uhatz / (uhat -1)) * ( 1 - (eta0x**2 + (1-eta0z)**2))
+                rhs = - ( la0 * (S/((uhat-1)**2))  + R )
+            else:
+                rhs = - la0 * S  # RHS of (DSS2011 Eq 18)
+              
+            # Solve the linear Poisson problem (DSS2011 Eq 18)
+            t0 = time.time()
+
+            # Compute DST-II
+            RHS = scipy.fftpack.dstn(rhs, type = 2)
+            NU  = RHS * self.INVLAP
+            # Inverse 
+            nu = scipy.fftpack.idstn(NU, type = 2) / (4 * self.NX * self.NZ)
+            t1 = time.time()
+            t_solve = t1 - t0
+
+            # Find the APE (DSS2011 Eq 21 & 22)
+            t0 = time.time()
+            F = self.compute_ape_fast(eta0, self.ZC)
+			
+            #Compute S1, S2 (components of DSS2011 Eq 20)
+            S1 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,nu)
+            S2 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,eta0)
+
+            t1 = time.time()
+            t_int = t1 - t0
+            
+            # Find new lambda (DSS2011 Eq 20)
+            la = la0 * (self.A - F + S2)/S1
+
+            # check if lambda is OK
+            if (la < 0):
+                print('New lambda has wrong sign --> nonconvergence of iterative procedure\n')
+                print('new lambda = %1.6e\n'% (la))
+                print('   A = %1.10e, F = %1.10e\n' %(self.A, F))
+                print('   S1 = %1.8e, S2 = %1.8e, S2/S1 = %1.8e\n'% (S1,S2,S2/S1))
+                break
+  
+            # Compute new c, eta
+            self.c   = numpy.sqrt(self.g * self.H / la)      # DSS2011 Eq 24
+            self.eta = (la/la0)*nu                           # (DSS2011 Eq 23)
+        
+            # Apply underrelaxation factor
+            self.eta = eta0 + self.relax*(self.eta - eta0)
+
+            # Find wave amplitude
+            self.wave_ampl = self.eta.flat[numpy.abs(self.eta).argmax()]
+            
+            # Compute relative difference between present and previous iteration
+            #reldiff = numpy.max ( numpy.abs(self.eta - eta0)) / numpy.abs(self.wave_ampl)
+            reldiff = numpy.abs(self.eta - eta0).max() / numpy.abs(self.wave_ampl)
+        
+            # Report on state of the operation
+            if (self.verbose >=1):
+                print('Iteration %4d:\n' %(iteration))
+                print(' A       = %+.10e, wave ampl = %+16.10f m\n'  % (self.A, self.wave_ampl))
+                print(' F       = %+.10e, c         = %+16.10f m/s\n'% ( F,self.c))
+                print(' reldiff = %+.10e\n\n'% (reldiff))
+        
+            if (iteration >= self.min_iteration) and (reldiff < self.epsilon):
+                flag = False
+            if (iteration >= self.max_iteration):
+                flag = False
+                print("Reached maximum number of iterations (%d >= %d)\n" %(iteration,self.max_iteration))
+           
+        t_stop = time.time()
+        t_total = t_stop - t_start
+        # Report the timing data
+        if (self.verbose >= 2):
+            print('Poisson solve time: %6.2f seconds\n' % (t_solve))
+            print('Integration time:   %6.2f seconds\n' % (t_int))
+            print('Other time:         %6.2f seconds\n' % (t_total - t_solve - t_int))
+            print('Total:              %6.2f seconds\n' % (t_total))
+        
+        
+
+        print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, self.wave_ampl))
+    
+
+    #########################################
+    #######     sinequadrature:      ########
+    #########################################
+    def sinequadrature(self):
+        """
+        Gets the weights for 2D quadrature over the domain
+        """
+        wtx = self.quadweights(self.NX)*(self.L/numpy.pi)
+        wtz = self.quadweights(self.NZ)*(self.H/numpy.pi)
+        w = numpy.einsum('i,j->ij',  wtz, wtx)
+        return w
+    
+    #########################################
+    #######          quadweights:    ########
+    #########################################
+    def quadweights(self, N):
+        """
+        Quadrature weights for integrating an odd periodic function over a
+        half period using the interior grid. From John Boyd's Chebyshev and
+        Fourier Spectral Methods, 2nd Ed, Pg 568, Eq F.32.
+        """
+        w = numpy.zeros(N)
+        for j in range(N):
+            xj = (2*(j+1) -1) * numpy.pi/ (2* N)
+            m = numpy.array([i for i in range(1, N)])
+            s = numpy.sum( numpy.sin(m*xj)*(numpy.sin(m*numpy.pi/2)**2)/m)
+            w[j] = (2/N/N)*numpy.sin(N*xj)*(numpy.sin(N*numpy.pi/2)**2) + (4/N)*s
+        return w
+    
+
+    #########################################
+    #######   compute_apedens:      #########
+    #########################################
+    def compute_apedens(self, eta, z ):
+        """
+        Use Gauss quadrature to find ape density
+        """        
+        if self.intrho is None:
+            A1 = self.rho(z - eta)
+            A2 = 0.0
+            for ii in range (0, numpy.size(self.wl)):
+                A2 -= self.wl[ii] *self.rho(z-self.zl[ii]*eta)
+            apedens = (A1+A2)*eta
+        else:
+            B1 = self.rho(z-eta)*eta
+            B2 = self.intrho(z-eta) - self.intrho_of_zc
+            apedens = B1 + B2
+
+        return self.g * apedens
+    
+ 	#########################################
+    #####     compute_ape_fast:     #########
+    #########################################
+    def compute_ape_fast(self, eta, z ) :
+        """
+        Compute total APE using symmetry to save time
+        """
+        ix=self.NX//2
+        if self.intrho is None:
+            apedens = self.rho( (z-eta)[:,:ix] )
+            for ii in range (numpy.size(self.wl)):
+                apedens -= self.wl[ii] *self.rho(z[:,:ix]-self.zl[ii]*eta[:,:ix])
+            apedens *= eta[:,:ix]
+        else:
+            apedens = self.rho( (z-eta)[:,:ix] )*eta[:,:ix]
+            apedens += self.intrho((z-eta)[:,:ix])
+            apedens -= self.intrho_of_zc[:,:ix]
+
+        ape = 2*self.g * numpy.einsum('ij,ij->',self.wsine[:,:ix], apedens)
+        return ape
+        
+    #########################################
+    #######       gradient:         #########
+    #########################################
+    def gradient(self, f, symmx, symmz): 
+        """
+        Computes gradient using the specified symmetry and grid type
+        """
+        if symmx == 'odd':            
+            # x derivative
+            ftrx = scipy.fftpack.dst (f , type = 2, axis = 1)
+            Fpx = numpy.einsum('ij,j-> ij', ftrx, self.kso)
+            # Now we have DCT-II coefficients. However we're missing the first
+            # one (k=0), so we need to prepend a zero to the start. 
+            #To do so, we roll right by 1 and reset first value to zero
+            Fpx = numpy.roll(Fpx,1, axis = 1)
+            Fpx[:, 0] = 0            
+            fx = scipy.fftpack.idct(Fpx, type = 2, axis = 1)/(2*self.NX)
+        else:
+            ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)         
+            Fpx = numpy.einsum('ij,j-> ij', ftrx, -self.kse)
+
+            # Now we have DCT-II coefficients, we need to drop the first one
+            Fpx = numpy.roll(Fpx,-1, axis = 1)
+            fx  = scipy.fftpack.idst(Fpx, type = 2, axis = 1)/(2*self.NX)
+
+        if symmz == 'odd':
+            # z derivative
+            ftrz = scipy.fftpack.dst (f , type = 2, axis = 0)
+            Fpz  = numpy.einsum('ij, i -> ij' , ftrz , self.mso)
+            Fpz  = numpy.roll(Fpz, 1, axis = 0)
+            Fpz[0, :]  = 0
+            fz = scipy.fftpack.idct(Fpz, type = 2 , axis = 0)/(2*self.NZ)
+            
+        else : 
+            ftrz = scipy.fftpack.dct(f, type = 2, axis = 0)
+            Fpz = numpy.einsum('ij, i -> ij' , ftrz , -self.mse)
+            Fpz = numpy.roll(Fpz,-1, axis = 0 )
+            fz  = scipy.fftpack.idst(Fpz, type= 2, axis = 0)/(2*self.NZ)
+
+        return fx, fz
+
+        
+    
+        
+
 class Diagnostic(object):
     """
     Diagnostic object
@@ -171,7 +687,7 @@ class Diagnostic(object):
         rhomax = djl.rho(-djl.H)
         rhomin = djl.rho(0)
         drho = rhomax - rhomin
-        rholin = lambda z : rhomin + (z/ - djl.H)*drho
+        rholin = lambda z : rhomin + (z/ -djl.H)*drho
         rhoodd = lambda z : djl.rho(z) - rholin(z)
          
         # We integrate dplin/dz = -g*rholin(z) analytically to get plin(z)
@@ -250,507 +766,8 @@ class Diagnostic(object):
         print('wnht, hb, residuals: %.1e, %.1e\n'%(wnhe,hbe))
 
 
-    
-class DJL(object):
-    """
-    DJL object
-    """
-    ################################
-    #######  djles_common: #########
-    ################################
-        
-    def __init__(self, A, L, H, NX, NZ, rho, rhoz,
-                 intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None,
-                 relax=0.5, epsilon=1e-4,
-                 initial_guess=None,
-                 verbose = 0,
-                 ):
-        """
-        Constructor
-        """
-        self.A = A 	#APE for wave (m^4/s^2)
-        self.L = L 	#domain width (m)
-        self.H = H 	#domain depth (m)
 
-        self.rho = rho
-        self.rhoz = rhoz
-        self.intrho = intrho
 
-        self.Ubg   = Ubg
-        self.Ubgz  = Ubgz
-        self.Ubgzz = Ubgzz
-
-        #  Default min and max number of iterations for the iterative procedure.
-        self.min_iteration = 10
-        self.max_iteration = 2000
-
-        # Default number of Legendre points for Gauss quadrature
-        self.NL = 20
-
-        # Underrelaxation factor, 0 < relax <= 1
-        # Setting this can help in finding a solution and/or speeding
-        # convergence. This value is interpreted as the fraction of the new
-        # field to keep after an iteration completes, that is,
-        # val = (1-relax)*oldval + (relax)*newval
-        # Setting relax=0 prevents the iterations from proceeding, and setting
-        # relax=1 simply disables underrelaxation. The default value of 0.5 works
-        # well for most cases.
-        self.relax = relax
-
-        # Gravitational acceleration constant (m/s^2)
-        self.g = 9.81
-
-        # Verbose flag. If >=1, we display a report on solving progress
-        # If >=2, display a timing report
-        self.verbose = verbose
-
-        # Convergence criteria: Stop iterating when the relative difference between
-        # successive iterations differs by less than epsilon
-        self.epsilon = epsilon
-
-        # If rho0 is not speficied, assume we are using non-dimensional density
-        self.rho0 = rho0
-        
-        # Get Legendre points and weights for Gauss quadrature
-        self.zl, self.wl = numpy.polynomial.legendre.leggauss(self.NL)
-        self.zl = (self.zl+1)/2
-        self.wl = self.wl/2
-        
-        self.prepareGrid(NX, NZ)
-        
-        # Cache intrho(ZC) if we have intrho
-        if self.intrho is not None:
-            self.intrho_of_zc = self.intrho(self.ZC)
-
-        # Handle initial guess
-        if initial_guess is None:
-            print ("well, eta ISNOT defined after all!")
-            self.initial_guess()
-        else:
-            print ("sure, eta is defined.")
-            self.import_initial_guess(initial_guess)
-
-        # Solve the wave
-        self.refine_solution()
-
-    def import_initial_guess(self, guess):
-        """
-        *** It's almost the same as change-resolution ***
-        Changes the resolution of eta to NZxNX
-        Then update grid info
-        """
-        eta0, NX0, NZ0 = guess.eta, guess.NX, guess.NZ
-        if not self.NX == NX0:
-            # Change eta0 in NX dim
-            ETA = scipy.fftpack.dst(eta0, type=2, axis = 1)/(2*NX0)
-            # Increase resolution: pad with zeros
-            if self.NX > NX0:
-                ETA0 = numpy.concatenate([ETA, numpy.zeros([NZ0, self.NX-NX0])], axis= 1)
-            # Decrease resolution: drop highest coefficients
-            if self.NX < NX0:
-                ETA0 = ETA[:,:self.NX]
-            # Inverse DST-II
-            eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 1)
-
-        if not self.NZ == NZ0:
-            #Change eta in NZ dim
-            ETA = scipy.fftpack.dst(eta0, type=2, axis = 0)/(2*NZ0)
-            # Increase resolution: pad with zeros
-            if self.NZ > NZ0:
-                ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ-NZ0, self.NX])], axis = 0)
-            # Decrease resolution: drop highest coefficients
-            if self.NZ < NZ0:
-                ETA0 = ETA[:self.NZ, :]
-            # Inverse DST-II
-            eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 0)
-
-        self.eta = eta0
-        self.c = guess.c
-     
-    def N2(self, z):
-        """
-        Create N2(z) function
-        """
-        return (-self.g/self.rho0)*self.rhoz(z)
-    
-    def prepareGrid(self, NX, NZ):
-        """
-     	Generate the grid and wavenumbers
-     	"""
-        self.NX = NX
-        self.NZ = NZ
-        
-        # Prepare the grids: (xc,zc) are cell centred, (xe,ze) are cell edges
-        self.dx = self.L/self.NX
-        self.dz = self.H/self.NZ
-        
-        self.xc = numpy.arange(0.5, self.NX, 1)*self.dx
-        self.zc = numpy.arange(0.5, self.NZ, 1)*self.dz - self.H
-        self.XC, self.ZC = numpy.meshgrid(self.xc,self.zc)
-        
-        self.xe = numpy.arange(0, self.NX, 1)*self.dx
-        self.ze = numpy.arange(0, self.NZ, 1)*self.dz - self.H
-        self.XE, self.ZE = numpy.meshgrid(self.xe,self.ze)
-        
-        # Get 2D weights for sine rectangle quadrature
-        self.wsine = self.sinequadrature()
-
-        # DST-II wavenumbers go from 1 to NX-1 or NZ-1 (beacause the function is odd)
-        self.kso = (numpy.pi / self.L) * numpy.arange(1, self.NX+1)
-        self.mso = (numpy.pi / self.H) * numpy.arange(1, self.NZ+1)
-        
-        self.kse = (numpy.pi / self.L) * numpy.arange(0, self.NX)
-        self.mse = (numpy.pi / self.H) * numpy.arange(0, self.NZ)
-
-        ksm = numpy.tile(self.kso,(self.NZ ,1))
-        msm = numpy.tile(self.mso,(self.NX, 1)).transpose()
-        self.LAP = -ksm**2 - msm**2
-        self.INVLAP = 1/self.LAP
-
-        ksme = numpy.tile(self.kse,(self.NZ ,1))
-        msme = numpy.tile(self.mse,(self.NX, 1)).transpose()
-        self.LAPE = -ksme**2 - msme**2
-        self.LAPE[0,0] = 1
-        self.INVLAPE = 1/self.LAPE
-        self.INVLAPE[0,0] = 0
-        
-    #########################################
-    #######     sinequadrature:      ########
-    #########################################
-    def sinequadrature(self):
-        """
-        Gets the weights for 2D quadrature over the domain
-        """
-        wtx = self.quadweights(self.NX)*(self.L/numpy.pi)
-        wtz = self.quadweights(self.NZ)*(self.H/numpy.pi)
-        w = numpy.einsum('i,j->ij',  wtz, wtx)
-        return w
-    
-    #########################################
-    #######          quadweights:    ########
-    #########################################
-    def quadweights(self, N):
-        """
-        Quadrature weights for integrating an odd periodic function over a
-        half period using the interior grid. From John Boyd's Chebyshev and
-        Fourier Spectral Methods, 2nd Ed, Pg 568, Eq F.32.
-        """
-        w = numpy.zeros(N)
-        for j in range(N):
-            xj = (2*(j+1) -1) * numpy.pi/ (2* N)
-            m = numpy.array([i for i in range(1, N)])
-            s = numpy.sum( numpy.sin(m*xj)*(numpy.sin(m*numpy.pi/2)**2)/m)
-            w[j] = (2/N/N)*numpy.sin(N*xj)*(numpy.sin(N*numpy.pi/2)**2) + (4/N)*s
-        return w
-    
-    #########################################
-    #######     initial_guess:      #########
-    #########################################
-    def initial_guess(self):
-        """
-        Finds an initial guess for eta and c via weakly nonlinear theory
-        """
-        eta = 0
-        Dz   = diffmatrix(self.dz, self.NZ, 1, 'not periodic');
-        Dzz  = diffmatrix(self.dz, self.NZ, 2, 'not periodic');
-        Dzzc = Dzz[1:-1, 1:-1] # cut the endpoints for Dirichlet conditions
-
-        #get n2, u and uzz data
-        tmpz   = self.zc[1:-1]      # column vector
-        n2vec  = self.N2(tmpz) 
-
-        #create diagonal matrices
-        N2d  = numpy.diag(n2vec )
-        
-        if (self.Ubg is None):
-            #setup quadratic eigenvalue problem
-            B0 = sparse.csr_matrix(N2d)
-            B1 = sparse.csr_matrix((self.NZ-2, self.NZ-2))
-            B2 = sparse.csr_matrix(Dzzc)
-        else:
-            uvec   = self.Ubg(tmpz)
-            uzzvec = self.Ubgzz(tmpz)
-            
-            Ud   = numpy.diag(uvec  )
-            Uzzd = numpy.diag(uzzvec)
-            
-            #setup quadratic eigenvalue problem
-            B0 = sparse.csr_matrix(N2d + Ud*Ud*Dzzc - Ud*Uzzd)
-            B1 = sparse.csr_matrix(-2*Ud*Dzzc + Uzzd)
-            B2 = sparse.csr_matrix(Dzzc)
-      
-        #Solve eigenvalue problem; extract first eigenvalue & eigenmode
-        Z = sparse.csr_matrix((self.NZ-2, self.NZ-2))
-        I = sparse.eye(self.NZ-2)
-        AA =sparse.bmat([[-B0, Z], [Z, I]], format = 'csr')
-        BB =sparse.bmat([[B1, B2], [I, Z]], format = 'csr' )
-        cc, V = scipy.linalg.eig(AA.todense() , BB.todense())
-        ii = numpy.argmax(cc)
-        V2 = V[:self.NZ-2, ii]
-        
-        #largest eigenvalue is clw
-        clw = cc[ii].real
-        
-        #Add boundary conditions
-        phi = numpy.pad(V2, (1,1), 'constant')
-        if self.Ubg is None:
-            uvec = numpy.zeros(phi.shape)
-        else:
-            uvec = numpy.pad(uvec, (1,1), 'constant', constant_values = (self.Ubg(-self.H), self.Ubg(0)))
-        
-        #Compute E1, normalise
-        E1 = numpy.divide(clw*phi , clw-uvec)
-        E1 = numpy.abs(E1) / numpy.max(numpy.abs(E1))
-        
-        # Compute r10 and r01
-        E1p = numpy.matmul(Dz, E1)
-        E1p2 = E1p**2
-        E1p3 = E1p**3
-        bot = numpy.sum((clw-uvec)*E1p2)
-        r10 = (-0.75/clw)*numpy.sum((clw-uvec)*(clw-uvec)*E1p3)/bot
-        r01 = -0.5*sum((clw-uvec)*(clw-uvec)*E1*E1)/bot
-        if (self.verbose == 1):
-            print('WNL gives: c_lw = %f, r10 = %f, r01 = %f\n\n' %( clw, r10, r01))
-        
-        #Now optimise the b0, lambda parameters
-        tmpE1 = numpy.asmatrix(E1).transpose()
-        E = numpy.matlib.repmat(tmpE1, 1, self.NX)
-        E[:, 0] = 0
-        E[:,-1] = 0
-        b0 = numpy.sign(r10)*0.05*self.H  #Start b0 as 5% of domain height
-        la = numpy.sqrt( -6*r01 / (clw * r10 * b0) )
-        c = (1 + (2/3) * r10 * b0)*clw
-        if (self.verbose ):
-            print('init b0 = %f, lambda = %f, V = %f\n' %( b0, la, c))
-        
-        flag = 1
-        while flag > 0 :
-            flag = flag + 1
-            eta0 = -b0 * numpy.asarray(E) * (1.0/numpy.cosh((self.XC - self.L/2) / la))**2
-            eta0[0, :] = 0
-            eta0[:, 0] = 0
-            eta0[:,-1] = 0
-            eta0[-1,:] = 0
-            
-            # Find the APE (DSS2011 Eq 21 & 22)
-            self.apedens = self.compute_apedens(eta0, self.ZC)
-            F = numpy.sum(self.wsine * self.apedens)
-
-            # New b0 by rescaling
-            afact = numpy.max([numpy.min([self.A/F , 1.05]), 0.95])
-            b0 = b0 * afact
-            
-            # New c, lambda
-            c = (1 + (2/3) * r10 * b0) * clw
-            la = numpy.sqrt( -6 * r01 / (clw * r10 * b0) )
-            if not numpy.isreal(la):
-                print('!problem finding new lambda-la !!')
-            
-            if (self.verbose >= 1 ):
-                print('F=%e, desired = %e, rescaling b0 by factor of %f...\n'%(F,self.A,afact))
-                print('new b0 = %f, lambda = %f, V = %f\n\n' % (b0,la,c))
-               
-            #Stop conditions: the wave gets too big, or we get matching APE
-            if numpy.abs(b0) > 0.75*self.H or numpy.abs(afact-1) < 0.01 :
-                eta = eta0
-                flag= 0
-        self.eta = eta
-        self.c = c
-    
-    #########################################
-    #######   compute_apedens:      #########
-    #########################################
-    def compute_apedens(self, eta, z ):
-        """
-        Use Gauss quadrature to find ape density
-        """        
-        if self.intrho is None:
-            A1 = self.rho(z - eta)
-            A2 = 0.0
-            for ii in range (0, numpy.size(self.wl)):
-                A2 -= self.wl[ii] *self.rho(z-self.zl[ii]*eta)
-            apedens = (A1+A2)*eta
-        else:
-            B1 = self.rho(z-eta)*eta
-            B2 = self.intrho(z-eta) - self.intrho_of_zc
-            apedens = B1 + B2
-
-        return (self.g * apedens)
-    
- 	#########################################
-    #####     compute_ape_fast:     #########
-    #########################################
-    def compute_ape_fast(self, eta, z ) :
-        """
-        Compute total APE using symmetry to save time
-        """
-        ix=self.NX//2
-        if self.intrho is None:
-            apedens = self.rho( (z-eta)[:,:ix] )
-            for ii in range (numpy.size(self.wl)):
-                apedens -= self.wl[ii] *self.rho(z[:,:ix]-self.zl[ii]*eta[:,:ix])
-            apedens *= eta[:,:ix]
-        else:
-            apedens = self.rho( (z-eta)[:,:ix] )*eta[:,:ix]
-            apedens += self.intrho((z-eta)[:,:ix])
-            apedens -= self.intrho_of_zc[:,:ix]
-
-        ape = 2*self.g * numpy.einsum('ij,ij->',self.wsine[:,:ix], apedens)
-        return ape
-        
-    #########################################
-    #######       gradient:         #########
-    #########################################
-    def gradient(self, f, symmx, symmz): 
-        """
-        Computes gradient using the specified symmetry and grid type
-        """
-        if (symmx == 'odd'):            
-            # x derivative
-            ftrx = scipy.fftpack.dst (f , type = 2, axis = 1)
-            Fpx = numpy.einsum('ij,j-> ij', ftrx, self.kso)
-            # Now we have DCT-II coefficients. However we're missing the first
-            # one (k=0), so we need to prepend a zero to the start. 
-            #To do so, we roll right by 1 and reset first value to zero
-            Fpx = numpy.roll(Fpx,1, axis = 1)
-            Fpx[:, 0] = 0            
-            fx = scipy.fftpack.idct(Fpx, type = 2, axis = 1)/(2*self.NX)
-        else:
-            ftrx = scipy.fftpack.dct(f, type = 2, axis = 1)         
-            Fpx = numpy.einsum('ij,j-> ij', ftrx, -self.kse)
-
-            # Now we have DCT-II coefficients, we need to drop the first one
-            Fpx = numpy.roll(Fpx,-1, axis = 1)
-            fx  = scipy.fftpack.idst(Fpx, type = 2, axis = 1)/(2*self.NX)
-
-        if (symmz == 'odd'):
-            # z derivative
-            ftrz = scipy.fftpack.dst (f , type = 2, axis = 0)
-            Fpz  = numpy.einsum('ij, i -> ij' , ftrz , self.mso)
-            Fpz  = numpy.roll(Fpz, 1, axis = 0)
-            Fpz[0, :]  = 0
-            fz = scipy.fftpack.idct(Fpz, type = 2 , axis = 0)/(2*self.NZ)
-            
-        else : 
-            ftrz = scipy.fftpack.dct(f, type = 2, axis = 0)
-            Fpz = numpy.einsum('ij, i -> ij' , ftrz , -self.mse)
-            Fpz = numpy.roll(Fpz,-1, axis = 0 )
-            fz  = scipy.fftpack.idst(Fpz, type= 2, axis = 0)/(2*self.NZ)
-
-        return fx, fz
-
-        
-    #########################################
-    #######     refine_solution:    #########
-    #########################################
-    def refine_solution(self):
-        """
-        Iterates eta to convergence following the procedure described
-        in Stastna and Lamb, 2002 (SL2002) and also in Dunphy, Subich 
-        and Stastna 2011 (DSS2011).
-        """
-        # Initialise t for recording timing data
-        t_start = time.time()
-        t_solve, t_int = 0, 0
-        if (self.verbose >= 1):
-            wave_ampl = self.eta.flat[numpy.abs(self.eta).argmax()]
-            print('Initial guess:\n wave ampl = %+.10e,   c = %+.10e\n\n'%(wave_ampl,self.c))
-        
-        flag = True
-        iteration = 0
-        while flag: 
-            # Iteration shift
-            iteration = iteration + 1
-            eta0 = self.eta
-            c0   = self.c
-            la0  = self.g * self.H / (self.c * self.c)
-            # Compute S (DSS2011 Eq 19)
-            S = self.N2(self.ZC - eta0) * eta0/(self.g*self.H)
-
-            # Compute R, assemble RHS
-            if self.Ubg is not None:
-                eta0x, eta0z = self.gradient(eta0, 'odd', 'odd')
-                uhat  = self.Ubg (self.ZC - eta0)/c0
-                uhatz = self.Ubgz(self.ZC - eta0)/c0
-                R = (uhatz / (uhat -1)) * ( 1 - (eta0x**2 + (1-eta0z)**2))
-                rhs = - ( la0 * (S/((uhat-1)**2))  + R )
-            else:
-                rhs = - la0 * S  # RHS of (DSS2011 Eq 18)
-              
-            #Solve the linear Poisson problem (DSS2011 Eq 18)
-            t0 = time.time()
-
-            # Compute DST-II
-            RHS = scipy.fftpack.dstn(rhs, type = 2)
-            NU  = RHS * self.INVLAP
-            # Inverse 
-            nu = scipy.fftpack.idstn(NU, type = 2) / (4 * self.NX * self.NZ)
-            t1 = time.time()
-            t_solve = t1 - t0
-
-            # Find the APE (DSS2011 Eq 21 & 22)
-            t0 = time.time()
-            F = self.compute_ape_fast(eta0, self.ZC)
-			
-            #Compute S1, S2 (components of DSS2011 Eq 20)
-            S1 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,nu)
-            S2 = self.g * self.H * self.rho0 * numpy.einsum('ij,ij,ij->',self.wsine,S,eta0)
-
-            t1 = time.time()
-            t_int = t1 - t0
-            
-            # Find new lambda (DSS2011 Eq 20)
-            la = la0 * (self.A - F + S2)/S1
-
-            # check if lambda is OK
-            if (la < 0):
-                print('New lambda has wrong sign --> nonconvergence of iterative procedure\n')
-                print('new lambda = %1.6e\n'% (la))
-                print('   A = %1.10e, F = %1.10e\n' %(self.A, F))
-                print('   S1 = %1.8e, S2 = %1.8e, S2/S1 = %1.8e\n'% (S1,S2,S2/S1))
-                break
-  
-            # Compute new c, eta
-            self.c   = numpy.sqrt(self.g * self.H / la)      # DSS2011 Eq 24
-            self.eta = (la/la0)*nu                           # (DSS2011 Eq 23)
-        
-            # Apply underrelaxation factor
-            self.eta = eta0 + self.relax*(self.eta - eta0)
-
-            # Find wave amplitude
-            self.wave_ampl = self.eta.flat[numpy.abs(self.eta).argmax()]
-            
-            # Compute relative difference between present and previous iteration
-            #reldiff = numpy.max ( numpy.abs(self.eta - eta0)) / numpy.abs(self.wave_ampl)
-            reldiff = numpy.abs(self.eta - eta0).max() / numpy.abs(self.wave_ampl)
-        
-            # Report on state of the operation
-            if (self.verbose >=1):
-                print('Iteration %4d:\n' %(iteration))
-                print(' A       = %+.10e, wave ampl = %+16.10f m\n'  % (self.A, self.wave_ampl))
-                print(' F       = %+.10e, c         = %+16.10f m/s\n'% ( F,self.c))
-                print(' reldiff = %+.10e\n\n'% (reldiff))
-        
-            if (iteration >= self.min_iteration) and (reldiff < self.epsilon):
-                flag = False
-            if (iteration >= self.max_iteration):
-                flag = False
-                print("Reached maximum number of iterations (%d >= %d)\n" %(iteration,self.max_iteration))
-           
-        t_stop = time.time()
-        t_total = t_stop - t_start
-        # Report the timing data
-        if (self.verbose >= 2):
-            print('Poisson solve time: %6.2f seconds\n' % (t_solve))
-            print('Integration time:   %6.2f seconds\n' % (t_int))
-            print('Other time:         %6.2f seconds\n' % (t_total - t_solve - t_int))
-            print('Total:              %6.2f seconds\n' % (t_total))
-        
-        
-
-        print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, self.wave_ampl))
-    
-        
 #########################################
 #######            plot :       #########
 #########################################
@@ -758,7 +775,7 @@ def plot( djl, diag, plottype):
     plt.clf()
     
     axis_array = []
-    if (plottype == 1 ):
+    if plottype == 1 :
         # Plot eta and density(z-eta)
         axis_array += [plt.subplot(1,2,1)]
         plt.pcolormesh(djl.XE, djl.ZE, djl.eta)
@@ -778,7 +795,7 @@ def plot( djl, diag, plottype):
             plt.ylabel('z (m)')
             
         
-    elif (plottype == 2): 
+    elif plottype == 2: 
         # Plot eight fields
         axis_array += [plt.subplot(4,2,1)]
         plt.pcolormesh(djl.XE, djl.ZE, djl.eta)
@@ -804,7 +821,7 @@ def plot( djl, diag, plottype):
     
         axis_array += [plt.subplot(4,2,6)]
         plt.pcolormesh(djl.XE, djl.ZE,diag.apedens, cmap= 'hot', vmin =0, vmax = numpy.max(numpy.abs(diag.apedens)))
-        plt.title('ape density');
+        plt.title('ape density')
         
         axis_array += [plt.subplot(4,2,7)]
         plt.pcolormesh(djl.XE, djl.ZE,diag.ri, vmin = 0.2, vmax = 1)
