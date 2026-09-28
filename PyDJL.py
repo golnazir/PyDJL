@@ -7,7 +7,7 @@ from scipy import sparse
 import scipy.sparse.linalg
 import scipy.fftpack
 import time
-
+import logging.config
     
 class DJL(object):
     """
@@ -19,9 +19,11 @@ class DJL(object):
         
     def __init__(self, A, L, H, NX, NZ, rho, rhoz,
                  intrho=None, rho0 = 1, Ubg=None, Ubgz = None, Ubgzz=None,
-                 relax=0.5, epsilon=1e-4,
+                 relax=0.5, epsilon=1e-4, max_iteration=None,
                  initial_guess=None,
                  verbose = 0,
+                 log_config=None,
+                 solve_immediately=True
                  ):
         """
         Constructor
@@ -31,6 +33,45 @@ class DJL(object):
             - Either call the initial_guess to prepare the initial eta and c or use the provided initial guess.
             - Call refine_solution to iteratively find the solution to DJL equation.
         """
+
+        # Log configuration.
+        if log_config is None:
+            logging.config.dictConfig(
+                {
+                    'version': 1,
+                    'disable_existing_loggers': False,
+                    'formatters': {
+                        'verbose': {
+                            'format': '[PyDJL] - {levelname}, {asctime}, {module}: {message}',
+                            'style': '{',
+                        },
+                        'simple': {
+                            'format': '[PyDJL] - {levelname}: {message}',
+                            'style': '{',
+                        },
+                    },
+                    'handlers': {
+                        'console': {
+                            'class': 'logging.StreamHandler',
+                            'formatter': 'verbose' if verbose > 1 else 'simple',
+                            'level': 'DEBUG' if verbose > 1 else 'INFO',
+                        },
+                    },
+                    'loggers': {
+                        'PyDJL': {
+                            'handlers': ['console'],
+                            'level': 'DEBUG' if verbose > 1 else 'INFO',
+                            'propagate': False,
+                        },
+                    },
+                }
+
+            )
+        else:
+            logging.config.dictConfig(log_config)
+
+        self.logger = logging.getLogger('PyDJL')
+
         self.A = A 	#APE for wave (m^4/s^2)
         self.L = L 	#domain width (m)
         self.H = H 	#domain depth (m)
@@ -47,7 +88,7 @@ class DJL(object):
 
         #  Default min and max number of iterations for the iterative procedure.
         self.min_iteration = 10
-        self.max_iteration = 2000
+        self.max_iteration = max_iteration if max_iteration is not None else 2000
 
         # Default number of Legendre points for Gauss quadrature - use for numerical integration.
         self.NL = 20
@@ -68,6 +109,12 @@ class DJL(object):
         # Verbose flag. If >=1, we display a report on solving progress
         # If >=2, display a timing report
         self.verbose = verbose
+        if self.verbose < 1:
+            self.logger.setLevel(logging.ERROR)
+        elif self.verbose == 1:
+            self.logger.setLevel(logging.INFO)
+        elif self.verbose >= 2:
+            self.logger.setLevel(logging.DEBUG)
 
         # Convergence criteria: Stop iterating when the relative difference between
         # successive iterations differs by less than epsilon
@@ -96,8 +143,9 @@ class DJL(object):
             # Use provided solution as initial guess (e.i use provided eta)
             self.import_initial_guess(initial_guess)
 
-        # Solve the wave
-        self.refine_solution()
+        if solve_immediately:
+            # Solve the wave
+            self.refine_solution()
 
     
     def N2(self, z):
@@ -213,8 +261,7 @@ class DJL(object):
         bot = numpy.sum((clw-uvec)*E1p2)
         r10 = (-0.75/clw)*numpy.sum((clw-uvec)*(clw-uvec)*E1p3)/bot
         r01 = -0.5*sum((clw-uvec)*(clw-uvec)*E1*E1)/bot
-        if self.verbose >= 1:
-            print('WNL gives: c_lw = %f, r10 = %f, r01 = %f\n\n' %( clw, r10, r01))
+        self.logger.info('WNL gives: c_lw = %f, r10 = %f, r01 = %f\n\n' % ( clw, r10, r01))
         
         # Now optimise the b0, lambda parameters
         tmpE1 = numpy.asmatrix(E1).transpose()
@@ -224,8 +271,8 @@ class DJL(object):
         b0 = numpy.sign(r10)*0.05*self.H  # Start b0 as 5% of domain height
         la = numpy.sqrt( -6*r01 / (clw * r10 * b0) )
         c = (1 + (2/3) * r10 * b0)*clw
-        if self.verbose >= 1:
-            print('init b0 = %f, lambda = %f, V = %f\n' %( b0, la, c))
+
+        self.logger.info('init b0 = %f, lambda = %f, V = %f\n' % ( b0, la, c))
         
         flag = 1
         while flag > 0 :
@@ -248,11 +295,11 @@ class DJL(object):
             c = (1 + (2/3) * r10 * b0) * clw
             la = numpy.sqrt( -6 * r01 / (clw * r10 * b0) )
             if not numpy.isreal(la):
-                print('!problem finding new lambda-la !!')
+                self.logger.warning('!problem finding new lambda-la !!')
             
             if self.verbose >= 1 :
-                print('F=%e, desired = %e, rescaling b0 by factor of %f...\n'%(F,self.A,afact))
-                print('new b0 = %f, lambda = %f, V = %f\n\n' % (b0,la,c))
+                self.logger.info('F=%e, desired = %e, rescaling b0 by factor of %f...\n'%(F,self.A,afact))
+                self.logger.info('new b0 = %f, lambda = %f, V = %f\n\n' % (b0,la,c))
                
             # Stop conditions: the wave gets too big, or we get matching APE
             if numpy.abs(b0) > 0.75*self.H or numpy.abs(afact-1) < 0.01 :
@@ -312,7 +359,7 @@ class DJL(object):
         t_solve, t_int = 0, 0
         if (self.verbose >= 1):
             wave_ampl = self.eta.flat[numpy.abs(self.eta).argmax()]
-            print('Initial guess:\n wave ampl = %+.10e,   c = %+.10e\n\n'%(wave_ampl,self.c))
+            self.logger.info('Initial guess:\n wave ampl = %+.10e,   c = %+.10e\n\n' % (wave_ampl,self.c))
         
         flag = True
         iteration = 0
@@ -362,10 +409,10 @@ class DJL(object):
 
             # check if lambda is OK
             if (la < 0):
-                print('New lambda has wrong sign --> nonconvergence of iterative procedure\n')
-                print('new lambda = %1.6e\n'% (la))
-                print('   A = %1.10e, F = %1.10e\n' %(self.A, F))
-                print('   S1 = %1.8e, S2 = %1.8e, S2/S1 = %1.8e\n'% (S1,S2,S2/S1))
+                self.logger.warning('New lambda has wrong sign --> nonconvergence of iterative procedure\n')
+                self.logger.warning('new lambda = %1.6e\n'% (la))
+                self.logger.warning('   A = %1.10e, F = %1.10e\n' %(self.A, F))
+                self.logger.warning('   S1 = %1.8e, S2 = %1.8e, S2/S1 = %1.8e\n'% (S1,S2,S2/S1))
                 break
   
             # Compute new c, eta
@@ -383,30 +430,28 @@ class DJL(object):
             reldiff = numpy.abs(self.eta - eta0).max() / numpy.abs(self.wave_ampl)
         
             # Report on state of the operation
-            if (self.verbose >=1):
-                print('Iteration %4d:\n' %(iteration))
-                print(' A       = %+.10e, wave ampl = %+16.10f m\n'  % (self.A, self.wave_ampl))
-                print(' F       = %+.10e, c         = %+16.10f m/s\n'% ( F,self.c))
-                print(' reldiff = %+.10e\n\n'% (reldiff))
+            self.logger.info('Iteration %4d:\n' %(iteration))
+            self.logger.info(' A       = %+.10e, wave ampl = %+16.10f m\n'  % (self.A, self.wave_ampl))
+            self.logger.info(' F       = %+.10e, c         = %+16.10f m/s\n' % ( F,self.c))
+            self.logger.info(' reldiff = %+.10e\n\n' % (reldiff))
         
             if (iteration >= self.min_iteration) and (reldiff < self.epsilon):
                 flag = False
             if (iteration >= self.max_iteration):
                 flag = False
-                print("Reached maximum number of iterations (%d >= %d)\n" %(iteration,self.max_iteration))
+                self.logger.error("Reached maximum number of iterations (%d >= %d)\n" %(iteration,self.max_iteration))
            
         t_stop = time.time()
         t_total = t_stop - t_start
-        # Report the timing data
-        if (self.verbose >= 2):
-            print('Poisson solve time: %6.2f seconds\n' % (t_solve))
-            print('Integration time:   %6.2f seconds\n' % (t_int))
-            print('Other time:         %6.2f seconds\n' % (t_total - t_solve - t_int))
-            print('Total:              %6.2f seconds\n' % (t_total))
+        # Report the timing data        
+        self.logger.debug('Poisson solve time: %6.2f seconds\n' % (t_solve))
+        self.logger.debug('Integration time:   %6.2f seconds\n' % (t_int))
+        self.logger.debug('Other time:         %6.2f seconds\n' % (t_total - t_solve - t_int))
+        self.logger.debug('Total:              %6.2f seconds\n' % (t_total))
         
         
 
-        print('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, self.wave_ampl))
+        self.logger.info('Finished [NX,NZ]=[%3dx%3d], A=%g, c=%g m/s, wave amplitude=%g m\n' % (self.NX, self.NZ, self.A, self.c, self.wave_ampl))
     
 
     #########################################
@@ -534,6 +579,8 @@ class Diagnostic(object):
         Constructor
         """
         self.djl = djl
+        self.wavelength = None
+        self.residual = None
         
         # Compute_diagnostic to assign rhe self variables.
         self.compute_diagnostics(self.djl)
@@ -578,7 +625,7 @@ class Diagnostic(object):
     #########################################
     #######        wavelength :     #########
     #########################################
-    def wavelength(self, eta, NX):
+    def compute_wavelength(self, eta, NX):
         """
         L_w following via Eq 3.6 in
         Aghsaee, P., Boegman, L., and K. G. Lamb. 2010. "Breaking of shoaling 
@@ -590,13 +637,13 @@ class Diagnostic(object):
         w  = self.djl.quadweights(NX) *(self.djl.L/numpy.pi)
         Lw = numpy.sum(w*etaL) / eta[iz,ix]
         # We take wavelength as twice Lw
-        self.wavelength = 2*Lw
-        return self.wavelength
+        wavelength = 2*Lw
+        return wavelength
     
     #########################################
     #######        residual :       #########
     #########################################
-    def residual(self, z, eta, c, NX, NZ ):
+    def compute_residual(self, z, eta, c, NX, NZ ):
         """
         DJL residual using Eq 2.32 in (Stastna, 2001)
         """
@@ -653,17 +700,20 @@ class Diagnostic(object):
         # Vorticity, density and Richardson number
         self.vorticity =self.uz - self.wx
         self.density = djl.rho(djl.ZC-djl.eta)
-        self.ri = djl.N2(djl.ZC-djl.eta)/(self.uz*self.uz)
+        if self.uz is not None:
+            self.ri = djl.N2(djl.ZC-djl.eta)/(self.uz*self.uz)
+        else:
+            self.ri = None
         
         #Wavelength (currently works only on interior grid)
-        self.wavelength = self.wavelength(djl.eta, djl.NX)
+        self.wavelength = self.compute_wavelength(djl.eta, djl.NX)
 
         # Residual in DJL equation
-        self.residual, LHS, RHS = self.residual(djl.ZC, djl.eta, djl.c, djl.NX, djl.NZ )
+        self.residual, LHS, RHS = self.compute_residual(djl.ZC, djl.eta, djl.c, djl.NX, djl.NZ )
 
         res = numpy.max(numpy.abs(self.residual))
         lhs = numpy.max(numpy.abs(LHS))
-        print('Relative residual %e ' % (res/lhs) )
+        djl.logger.info('Relative residual %e ' % (res/lhs) )
     
     #########################################
     #######        pressure :       #########
@@ -762,8 +812,8 @@ class Diagnostic(object):
         wnhe=numpy.max(numpy.abs(wtnh)) / numpy.max(numpy.abs(-pnhz/djl.rho0))
         hbe =numpy.max(numpy.abs(hb))   / numpy.max(numpy.abs(phz))
         
-        print('ut, wt, div, rho_t residuals: %.1e, %.1e, %.1e, %.1e\n'%(ue,we,de,re))
-        print('wnht, hb, residuals: %.1e, %.1e\n'%(wnhe,hbe))
+        djl.logger.info('ut, wt, div, rho_t residuals: %.1e, %.1e, %.1e, %.1e\n'%(ue,we,de,re))
+        djl.logger.info('wnht, hb, residuals: %.1e, %.1e\n'%(wnhe,hbe))
 
 
 

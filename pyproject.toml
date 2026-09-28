@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pydjl"
+version = "0.2.1"
+description = "Python DJL equation solver (port of mdunphy/DJLES)"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+]
+
+[tool.setuptools]
+py-modules = ["PyDJL"]
