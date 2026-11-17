@@ -1,0 +1,6 @@
+# Store and check out text files with LF on every platform (WSL and Windows Git).
+# This overrides each client's core.autocrlf setting.
+* text=auto eol=lf
+
+# Binary files: never convert
+*.png binary
