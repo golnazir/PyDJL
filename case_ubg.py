@@ -34,21 +34,21 @@ djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho)
 # Start with U0=0, raise it to U0=0.1 over 6 increments
 for U0 in numpy.linspace(0, 0.1, 6):
     # Velocity profile for this wave
-    djl.Ubg  = lambda z: fUbg  (z, U0)
-    djl.Ubgz = lambda z: fUbgz (z, U0)
-    djl.Ubgzz= lambda z: fUbgzz(z, U0)
-    
+    Ubg  = lambda z: fUbg  (z, U0)
+    Ubgz = lambda z: fUbgz (z, U0)
+    Ubgzz= lambda z: fUbgzz(z, U0)
+
     # Find the solution of the DJL equation
     # Use a reduced epsilon for these intermediate waves
-    djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, epsilon = 1e-3, initial_guess = djl)
- 
+    djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, Ubg = Ubg, Ubgz = Ubgz, Ubgzz = Ubgzz, epsilon = 1e-3, initial_guess = djl)
+
 # Increase the resolution, reduce epsilon, iterate to convergence
 NX, NZ = 64, 64
-djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, epsilon =  1e-6, initial_guess = djl)
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, Ubg = Ubg, Ubgz = Ubgz, Ubgzz = Ubgzz, epsilon =  1e-6, initial_guess = djl)
 
 # Increase the resolution and iterate to convergence
 NX, NZ = 512, 256
-djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, epsilon =  1e-6, initial_guess = djl)
+djl = DJL(A, L, H, NX, NZ, rho, rhoz, intrho= intrho, Ubg = Ubg, Ubgz = Ubgz, Ubgzz = Ubgzz, epsilon =  1e-6, initial_guess = djl)
 
 end_time = time.time()
 print('Total wall clock time: %f seconds\n' %(end_time - start_time))
