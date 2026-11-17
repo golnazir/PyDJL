@@ -227,8 +227,8 @@ class DJL(object):
             Uzzd = numpy.diag(uzzvec)
             
             # Setup quadratic eigenvalue problem
-            B0 = sparse.csr_matrix(N2d + Ud*Ud*Dzzc - Ud*Uzzd)
-            B1 = sparse.csr_matrix(-2*Ud*Dzzc + Uzzd)
+            B0 = sparse.csr_matrix(N2d + Ud @ Ud @ Dzzc - Ud @ Uzzd)
+            B1 = sparse.csr_matrix(-2 * Ud @ Dzzc + Uzzd)
             B2 = sparse.csr_matrix(Dzzc)
       
         # Solve eigenvalue problem; extract first eigenvalue & eigenmode
