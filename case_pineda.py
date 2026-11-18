@@ -24,11 +24,11 @@ rhozdata = numpy.gradient(rhodata,zdata)
 
 # Now build piecewise interpolating polynomials from the data,
 # and convert them to function handles for the solver
-#method='pchip';  % pchip respects monotonicity
-#rho  = lambda z: interpolate.PchipInterpolator(zdata, rhodata )(z)
-#rhoz = lambda z: interpolate.PchipInterpolator(zdata, rhozdata)(z)
-rho  = lambda z: interpolate.interp1d(zdata, rhodata )(z)
-rhoz = lambda z: interpolate.interp1d(zdata, rhozdata)(z)
+# pchip respects monotonicity (same method as DJLES)
+rho_pchip  = interpolate.PchipInterpolator(zdata, rhodata )
+rhoz_pchip = interpolate.PchipInterpolator(zdata, rhozdata)
+rho  = lambda z: rho_pchip(z)
+rhoz = lambda z: rhoz_pchip(z)
 
 L, H = 1200, 57   # domain width (m) and depth(m), estimated from Pineda et al's Figure 9 (a)
 
@@ -86,7 +86,7 @@ plt.grid(True)
 plt.title('U at 1 mab')
 
 plt.subplot(4,1,4)
-f = interpolate.RectBivariateSpline(djl.xc, djl.zc, diag.p.transpose())
+f = interpolate.RectBivariateSpline(djl.xc, djl.zc, diag.p.transpose(), kx =1 , ky = 1)
 plt.plot(djl.xc-djl.L/2, f(djl.xc,-djl.H+1), color = 'black')
 plt.xlim(-300, 300)
 plt.grid(True) 
@@ -121,9 +121,9 @@ for ai, A in enumerate (Alist):
     NX, NZ = 64, 64
     djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-4, initial_guess = djl) 
     
-#    NX, NZ = 128,128
-#    djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-5, initial_guess = djl)
-#    
+    NX, NZ = 128,128
+    djl = DJL(A, L, H, NX, NZ, rho, rhoz, rho0 = rho0, epsilon = 1e-5, initial_guess = djl)
+
     # Compute and record quantities
     diag = Diagnostic(djl)
     diag.pressure(djl)
@@ -131,13 +131,13 @@ for ai, A in enumerate (Alist):
     WArec[ai] = djl.wave_ampl
     Crec[ai] = djl.c
 
-    f1 = interpolate.interp2d(djl.XC, djl.ZC, diag.u)
+    f1 = interpolate.RectBivariateSpline(djl.xc, djl.zc, diag.u.transpose(), kx = 1, ky = 1)
     u1mab = f1(djl.xc,-djl.H+1)
     val = u1mab.flat[numpy.abs(u1mab).argmax()]
     Urec[ai] = val
-    
-    f2 = interpolate.interp2d(djl.XC, djl.ZC, diag.p)
-    p1mab = f2(djl.xc,-djl.H+1);
+
+    f2 = interpolate.RectBivariateSpline(djl.xc, djl.zc, diag.p.transpose(), kx = 1, ky = 1)
+    p1mab = f2(djl.xc,-djl.H+1)
     val = p1mab.flat[numpy.abs(p1mab).argmax()]
     Prec[ai] = val
     
