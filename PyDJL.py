@@ -33,6 +33,9 @@ class DJL(object):
             - Either call the initial_guess to prepare the initial eta and c or use the provided initial guess.
             - Call refine_solution to iteratively find the solution to DJL equation.
         """
+        
+        if not A > 0:
+            raise ValueError("A (wave APE) must be positive, got %r" % (A,))
 
         # Log configuration.
         if log_config is None:
