@@ -144,7 +144,7 @@ for ai, A in enumerate (Alist):
     
 end_time = time.time()
 print('Total wall clock time: %f seconds\n'%(end_time - start_time))
-breakpoint()
+
 # Construct Pineda et al. (2015) Figure 10
 plt.clf()
 plt.figure(10)
