@@ -4,7 +4,7 @@ import numpy
 import numpy.matlib
 import matplotlib.pyplot as plt
 from scipy import sparse
-import scipy.sparse.linalg
+import scipy.linalg
 import scipy.fftpack
 import time
 import logging.config

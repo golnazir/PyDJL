@@ -48,7 +48,6 @@ plt.plot(rhozdata,zdata,'r',linewidth = 2)
 plt.grid(True)
 
 plt.tight_layout()
-plt.savefig('test.png')
 plt.ion()
 plt.show()
 
