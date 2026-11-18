@@ -322,25 +322,32 @@ class DJL(object):
         eta0, NX0, NZ0 = guess.eta, guess.NX, guess.NZ
         if not self.NX == NX0:
             # Change the resolution in x-dimension using sine transform approach
+            # The inverse DST-II gives its last coefficient weight 1 and all
+            # others weight 2, so the last mode is rescaled when it moves.
             ETA = scipy.fftpack.dst(eta0, type=2, axis = 1)/(2*NX0)
             # Increase resolution: pad with zeros
             if self.NX > NX0:
+                ETA[:, -1] *= 0.5
                 ETA0 = numpy.concatenate([ETA, numpy.zeros([NZ0, self.NX-NX0])], axis= 1)
             # Decrease resolution: drop highest coefficients
             if self.NX < NX0:
                 ETA0 = ETA[:,:self.NX]
+                ETA0[:, -1] *= 2
             # Inverse DST-II
             eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 1)
 
         if not self.NZ == NZ0:
             # Change the resolution in z-dimension using sine transform approach
+            # Rescale the last mode, as for x above
             ETA = scipy.fftpack.dst(eta0, type=2, axis = 0)/(2*NZ0)
             # Increase resolution: pad with zeros
             if self.NZ > NZ0:
+                ETA[-1, :] *= 0.5
                 ETA0 = numpy.concatenate([ETA, numpy.zeros([self.NZ-NZ0, self.NX])], axis = 0)
             # Decrease resolution: drop highest coefficients
             if self.NZ < NZ0:
                 ETA0 = ETA[:self.NZ, :]
+                ETA0[-1, :] *= 2
             # Inverse DST-II
             eta0 = scipy.fftpack.idst(ETA0,type=2, axis = 0)
 
